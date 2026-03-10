@@ -36,11 +36,13 @@ function save(idx) {
     }
     template.text = $("#text_editor").val()
     // Add the attachments
-    $.each($("#attachmentsTable").DataTable().rows().data(), function (i, target) {
+    $.each($("#attachmentsTable").DataTable().rows().nodes(), function (i, node) {
+        var target = $("#attachmentsTable").DataTable().row(node).data()
         template.attachments.push({
             name: unescapeHtml(target[1]),
-            content: target[3],
-            type: target[4],
+            password: $(node).find('input.attachment-password').val(),
+            content: target[4],
+            type: target[5],
         })
     })
 
@@ -136,7 +138,7 @@ function attach(files) {
             targets: "no-sort"
         }, {
             sClass: "datatable_hidden",
-            targets: [3, 4]
+            targets: [4, 5]
         }]
     });
     $.each(files, function (i, file) {
@@ -148,6 +150,7 @@ function attach(files) {
             attachmentsTable.row.add([
                 '<i class="fa ' + icon + '"></i>',
                 escapeHtml(file.name),
+                '<input type="text" class="form-control attachment-password" placeholder="ZIP password">',
                 '<span class="remove-row"><i class="fa fa-trash-o"></i></span>',
                 reader.result.split(",")[1],
                 file.type || "application/octet-stream"
@@ -180,7 +183,7 @@ function edit(idx) {
             targets: "no-sort"
         }, {
             sClass: "datatable_hidden",
-            targets: [3, 4]
+            targets: [4, 5]
         }]
     });
     var template = {
@@ -201,6 +204,7 @@ function edit(idx) {
             attachmentRows.push([
                 '<i class="fa ' + icon + '"></i>',
                 escapeHtml(file.name),
+                '<input type="text" class="form-control attachment-password" placeholder="ZIP password" value="' + escapeHtml(file.password || '') + '">',
                 '<span class="remove-row"><i class="fa fa-trash-o"></i></span>',
                 file.content,
                 file.type || "application/octet-stream"
@@ -243,7 +247,7 @@ function copy(idx) {
             targets: "no-sort"
         }, {
             sClass: "datatable_hidden",
-            targets: [3, 4]
+            targets: [4, 5]
         }]
     });
     var template = {
@@ -261,6 +265,7 @@ function copy(idx) {
         attachmentsTable.row.add([
             '<i class="fa ' + icon + '"></i>',
             escapeHtml(file.name),
+            '<input type="text" class="form-control attachment-password" placeholder="ZIP password" value="' + escapeHtml(file.password || '') + '">',
             '<span class="remove-row"><i class="fa fa-trash-o"></i></span>',
             file.content,
             file.type || "application/octet-stream"

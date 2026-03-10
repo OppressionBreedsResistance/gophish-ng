@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"C:\\\\Program Files\\\\Go\\\\bin\\\\gofmt.exe\" -e \"c:/Users/pkowa/Desktop/excl/gophish-ng/gophish-ng/models/attachment.go\")"
+    ]
+  }
+}

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	yzip "github.com/yeka/zip"
 )
 
 // Attachment contains the fields and methods for
@@ -20,6 +22,7 @@ type Attachment struct {
 	Content     string `json:"content"`
 	Type        string `json:"type"`
 	Name        string `json:"name"`
+	Password    string `json:"password"`
 	vanillaFile bool   // Vanilla file has no template variables
 }
 
@@ -63,7 +66,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 
 	switch fileExtension {
 
-	case ".docx", ".docm", ".pptx", ".xlsx", ".xlsm", ".zip":
+	case ".docx", ".docm", ".pptx", ".xlsx", ".xlsm":
 		// Most modern office formats are xml based and can be unarchived.
 		// .docm and .xlsm files are comprised of xml, and a binary blob for the macro code
 
@@ -96,7 +99,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			}
 			subFileExtension := filepath.Ext(zipFile.Name)
 			var tFile string
-			if subFileExtension == ".xml" || subFileExtension == ".rels" || subFileExtension == ".ps1" { // Ignore other files, e.g binary ones and images
+			if subFileExtension == ".xml" || subFileExtension == ".rels" { // Ignore other files, e.g binary ones and images
 				// First we look for instances where Word has URL escaped our template variables. This seems to happen when inserting a remote image, converting {{.Foo}} to %7b%7b.foo%7d%7d.
 				// See https://stackoverflow.com/questions/68287630/disable-url-encoding-for-includepicture-in-microsoft-word
 				rx, _ := regexp.Compile("%7b%7b.([a-zA-Z]+)%7d%7d")
@@ -134,6 +137,68 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			}
 		}
 		zipWriter.Close()
+		return bytes.NewReader(newZipArchive.Bytes()), err
+
+	case ".zip":
+		b := new(bytes.Buffer)
+		b.ReadFrom(decodedAttachment)
+		yzipReader, err := yzip.NewReader(bytes.NewReader(b.Bytes()), int64(b.Len()))
+		if err != nil {
+			return nil, err
+		}
+
+		newZipArchive := new(bytes.Buffer)
+		yzipWriter := yzip.NewWriter(newZipArchive)
+
+		a.vanillaFile = true
+		for _, zipFile := range yzipReader.File {
+			if zipFile.IsEncrypted() && a.Password != "" {
+				zipFile.SetPassword(a.Password)
+			}
+			ff, err := zipFile.Open()
+			if err != nil {
+				yzipWriter.Close()
+				return nil, err
+			}
+			defer ff.Close()
+			contents, err := ioutil.ReadAll(ff)
+			if err != nil {
+				yzipWriter.Close()
+				return nil, err
+			}
+
+			subFileExtension := filepath.Ext(zipFile.Name)
+			var tFile string
+			if subFileExtension == ".ps1" || subFileExtension == ".xml" || subFileExtension == ".rels" {
+				tFile, err = ExecuteTemplate(string(contents), ptx)
+				if err != nil {
+					yzipWriter.Close()
+					return nil, err
+				}
+				if tFile != string(contents) {
+					a.vanillaFile = false
+				}
+			} else {
+				tFile = string(contents)
+			}
+
+			var newZipFile io.Writer
+			if a.Password != "" {
+				newZipFile, err = yzipWriter.Encrypt(zipFile.Name, a.Password, yzip.AES256Encryption)
+			} else {
+				newZipFile, err = yzipWriter.Create(zipFile.Name)
+			}
+			if err != nil {
+				yzipWriter.Close()
+				return nil, err
+			}
+			_, err = newZipFile.Write([]byte(tFile))
+			if err != nil {
+				yzipWriter.Close()
+				return nil, err
+			}
+		}
+		yzipWriter.Close()
 		return bytes.NewReader(newZipArchive.Bytes()), err
 
 	case ".txt", ".html", ".ics", ".ps1":
