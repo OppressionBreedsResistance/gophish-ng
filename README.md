@@ -38,6 +38,21 @@ This fork includes the following modifications on top of the upstream Gophish co
 
 - **`.ps1` files** — PowerShell attachments now support placeholder substitution (e.g. `{{.URL}}`, `{{.FirstName}}`), the same way `.txt` and `.html` files do.
 - **`.zip` files containing `.ps1`** — When a `.zip` archive is used as an attachment, Gophish will unpack it in memory, apply template substitution to any `.ps1` (and `.xml`/`.rels`) files inside, and repack it before sending. This allows delivery of personalized PowerShell payloads inside ZIP archives.
+- **Password-protected `.zip` attachments** — ZIP archives can now be encrypted with a password (AES-256). Gophish will decrypt the archive, apply placeholder substitution to the contained `.ps1` files, and re-encrypt the result with the same password before sending.
+
+##### How to use password-protected ZIP attachments
+
+1. Create your payload script, e.g. `payload.ps1`, using any placeholders:
+   ```powershell
+   $url = "{{.URL}}"
+   $name = "{{.FirstName}}"
+   ```
+2. Compress the script into a password-protected ZIP archive using any tool that supports AES-256 encryption (e.g. 7-Zip: `7z a -p"SecretPass" -mem=AES256 payload.zip payload.ps1`).
+3. In Gophish, go to **Email Templates → New/Edit Template** and attach the `.zip` file using the **Add Files** button.
+4. A **Password** field will appear in the attachment row — enter the ZIP password there.
+5. Save the template. When Gophish sends the campaign, each recipient will receive a `.zip` with a personalized `.ps1` inside, still protected by the same password.
+
+> **Note:** The password is stored in the database alongside the attachment. Use a strong, unique password per campaign. Only AES-256 encrypted ZIPs are supported — the legacy ZipCrypto format is not recommended.
 
 #### IOC Removal
 
