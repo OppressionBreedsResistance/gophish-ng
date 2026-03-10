@@ -63,7 +63,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 
 	switch fileExtension {
 
-	case ".docx", ".docm", ".pptx", ".xlsx", ".xlsm":
+	case ".docx", ".docm", ".pptx", ".xlsx", ".xlsm", ".zip":
 		// Most modern office formats are xml based and can be unarchived.
 		// .docm and .xlsm files are comprised of xml, and a binary blob for the macro code
 
@@ -96,7 +96,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			}
 			subFileExtension := filepath.Ext(zipFile.Name)
 			var tFile string
-			if subFileExtension == ".xml" || subFileExtension == ".rels" { // Ignore other files, e.g binary ones and images
+			if subFileExtension == ".xml" || subFileExtension == ".rels" || subFileExtension == ".ps1" { // Ignore other files, e.g binary ones and images
 				// First we look for instances where Word has URL escaped our template variables. This seems to happen when inserting a remote image, converting {{.Foo}} to %7b%7b.foo%7d%7d.
 				// See https://stackoverflow.com/questions/68287630/disable-url-encoding-for-includepicture-in-microsoft-word
 				rx, _ := regexp.Compile("%7b%7b.([a-zA-Z]+)%7d%7d")
@@ -136,7 +136,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 		zipWriter.Close()
 		return bytes.NewReader(newZipArchive.Bytes()), err
 
-	case ".txt", ".html", ".ics":
+	case ".txt", ".html", ".ics", ".ps1":
 		b, err := ioutil.ReadAll(decodedAttachment)
 		if err != nil {
 			return nil, err
