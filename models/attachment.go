@@ -14,6 +14,37 @@ import (
 	yzip "github.com/yeka/zip"
 )
 
+// patchZipAESReaderVersion patches the "version needed to extract" field in both
+// local file headers and central directory entries for AES-256 encrypted ZIP entries.
+// yeka/zip hardcodes ReaderVersion=20 (v2.0), but the WinZip AES spec requires v5.1 (51)
+// for AES-256. Windows Explorer enforces this; 7-Zip does not.
+func patchZipAESReaderVersion(data []byte) []byte {
+	buf := make([]byte, len(data))
+	copy(buf, data)
+	const aesMethod = 99
+	const readerVersionAES = 51 // v5.1 required by WinZip AES spec
+	for i := 0; i < len(buf)-4; i++ {
+		if buf[i] != 0x50 || buf[i+1] != 0x4B {
+			continue
+		}
+		switch {
+		case buf[i+2] == 0x03 && buf[i+3] == 0x04 && i+10 <= len(buf): // local file header
+			method := uint16(buf[i+8]) | uint16(buf[i+9])<<8
+			if method == aesMethod {
+				buf[i+4] = byte(readerVersionAES)
+				buf[i+5] = 0
+			}
+		case buf[i+2] == 0x01 && buf[i+3] == 0x02 && i+12 <= len(buf): // central directory
+			method := uint16(buf[i+10]) | uint16(buf[i+11])<<8
+			if method == aesMethod {
+				buf[i+6] = byte(readerVersionAES)
+				buf[i+7] = 0
+			}
+		}
+	}
+	return buf
+}
+
 // Attachment contains the fields and methods for
 // an email attachment
 type Attachment struct {
@@ -209,7 +240,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			}
 		}
 		yzipWriter.Close()
-		return bytes.NewReader(newZipArchive.Bytes()), err
+		return bytes.NewReader(patchZipAESReaderVersion(newZipArchive.Bytes())), err
 
 	case ".txt", ".html", ".ics", ".ps1":
 		b, err := ioutil.ReadAll(decodedAttachment)
