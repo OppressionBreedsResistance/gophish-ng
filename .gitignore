@@ -25,7 +25,28 @@ _testmain.go
 
 gophish_admin.crt
 gophish_admin.key
+gophish.crt
+gophish.key
 
 *.exe
 gophish.db*
 gophish
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code local settings
+.claude/
+
+# Build artifacts
+dist/
+build/
+
+# Logs
+*.log
+
+# OS
+Thumbs.db

@@ -143,6 +143,7 @@ func (r *Result) HandleEmailReport(details EventDetails) error {
 		return err
 	}
 	r.Reported = true
+	r.Status = EventReported
 	r.ModifiedDate = event.Time
 	return db.Save(r).Error
 }
