@@ -4,12 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/url"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -151,10 +148,9 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			return nil, err
 		}
 
-		// Extract all entries, applying template substitution to text-based files.
 		type zipEntry struct {
-			name         string
-			contents     []byte
+			name          string
+			contents      []byte
 			externalAttrs uint32
 			modifiedTime  uint16
 			modifiedDate  uint16
@@ -162,6 +158,9 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 		var entries []zipEntry
 		a.vanillaFile = true
 		for _, zipFile := range yzipReader.File {
+			if zipFile.FileInfo().IsDir() {
+				continue // skip directory entries
+			}
 			if zipFile.IsEncrypted() && a.Password != "" {
 				zipFile.SetPassword(a.Password)
 			}
@@ -197,42 +196,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			})
 		}
 
-		if a.Password != "" {
-			// Use 7z to create a properly AES-256 encrypted ZIP that Windows Explorer accepts.
-			tmpDir, err := os.MkdirTemp("", "gophish-zip-*")
-			if err != nil {
-				return nil, err
-			}
-			defer os.RemoveAll(tmpDir)
-
-			var fileNames []string
-			for _, entry := range entries {
-				entryPath := filepath.Join(tmpDir, entry.name)
-				if err := os.MkdirAll(filepath.Dir(entryPath), 0700); err != nil {
-					return nil, err
-				}
-				if err := os.WriteFile(entryPath, entry.contents, 0600); err != nil {
-					return nil, err
-				}
-				fileNames = append(fileNames, entry.name)
-			}
-
-			outZip := filepath.Join(tmpDir, "_output.zip")
-			args := append([]string{"a", "-tzip", "-mem=AES256", "-p" + a.Password, outZip}, fileNames...)
-			cmd := exec.Command("7z", args...)
-			cmd.Dir = tmpDir
-			if out, cmdErr := cmd.CombinedOutput(); cmdErr != nil {
-				return nil, fmt.Errorf("7z failed: %s: %w", string(out), cmdErr)
-			}
-
-			data, err := os.ReadFile(outZip)
-			if err != nil {
-				return nil, err
-			}
-			return bytes.NewReader(data), nil
-		}
-
-		// No password — use yeka/zip writer (non-encrypted ZIPs work fine in Windows Explorer).
+		// ZipCrypto: yeka/zip handles it correctly (no ReaderVersion issue) and preserves ExternalAttrs.
 		newZipArchive := new(bytes.Buffer)
 		yzipWriter := yzip.NewWriter(newZipArchive)
 		for _, entry := range entries {
@@ -242,6 +206,11 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 				ExternalAttrs: entry.externalAttrs,
 				ModifiedTime:  entry.modifiedTime,
 				ModifiedDate:  entry.modifiedDate,
+			}
+			if a.Password != "" {
+				// ZipCrypto re-encryption via yeka/zip
+				fh.SetPassword(a.Password)
+				fh.SetEncryptionMethod(yzip.StandardEncryption)
 			}
 			newZipFile, err := yzipWriter.CreateHeader(&fh)
 			if err != nil {
