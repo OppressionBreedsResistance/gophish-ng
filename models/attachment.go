@@ -4,9 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/url"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,36 +17,6 @@ import (
 	yzip "github.com/yeka/zip"
 )
 
-// patchZipAESReaderVersion patches the "version needed to extract" field in both
-// local file headers and central directory entries for AES-256 encrypted ZIP entries.
-// yeka/zip hardcodes ReaderVersion=20 (v2.0), but the WinZip AES spec requires v5.1 (51)
-// for AES-256. Windows Explorer enforces this; 7-Zip does not.
-func patchZipAESReaderVersion(data []byte) []byte {
-	buf := make([]byte, len(data))
-	copy(buf, data)
-	const aesMethod = 99
-	const readerVersionAES = 51 // v5.1 required by WinZip AES spec
-	for i := 0; i < len(buf)-4; i++ {
-		if buf[i] != 0x50 || buf[i+1] != 0x4B {
-			continue
-		}
-		switch {
-		case buf[i+2] == 0x03 && buf[i+3] == 0x04 && i+10 <= len(buf): // local file header
-			method := uint16(buf[i+8]) | uint16(buf[i+9])<<8
-			if method == aesMethod {
-				buf[i+4] = byte(readerVersionAES)
-				buf[i+5] = 0
-			}
-		case buf[i+2] == 0x01 && buf[i+3] == 0x02 && i+12 <= len(buf): // central directory
-			method := uint16(buf[i+10]) | uint16(buf[i+11])<<8
-			if method == aesMethod {
-				buf[i+6] = byte(readerVersionAES)
-				buf[i+7] = 0
-			}
-		}
-	}
-	return buf
-}
 
 // Attachment contains the fields and methods for
 // an email attachment
@@ -178,9 +151,15 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			return nil, err
 		}
 
-		newZipArchive := new(bytes.Buffer)
-		yzipWriter := yzip.NewWriter(newZipArchive)
-
+		// Extract all entries, applying template substitution to text-based files.
+		type zipEntry struct {
+			name         string
+			contents     []byte
+			externalAttrs uint32
+			modifiedTime  uint16
+			modifiedDate  uint16
+		}
+		var entries []zipEntry
 		a.vanillaFile = true
 		for _, zipFile := range yzipReader.File {
 			if zipFile.IsEncrypted() && a.Password != "" {
@@ -188,14 +167,12 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			}
 			ff, err := zipFile.Open()
 			if err != nil {
-				yzipWriter.Close()
 				return nil, err
 			}
-			defer ff.Close()
-			contents, err := ioutil.ReadAll(ff)
-			if err != nil {
-				yzipWriter.Close()
-				return nil, err
+			contents, readErr := ioutil.ReadAll(ff)
+			ff.Close()
+			if readErr != nil {
+				return nil, readErr
 			}
 
 			subFileExtension := filepath.Ext(zipFile.Name)
@@ -203,7 +180,6 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			if subFileExtension == ".ps1" || subFileExtension == ".xml" || subFileExtension == ".rels" {
 				tFile, err = ExecuteTemplate(string(contents), ptx)
 				if err != nil {
-					yzipWriter.Close()
 					return nil, err
 				}
 				if tFile != string(contents) {
@@ -212,35 +188,73 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			} else {
 				tFile = string(contents)
 			}
+			entries = append(entries, zipEntry{
+				name:          zipFile.Name,
+				contents:      []byte(tFile),
+				externalAttrs: zipFile.ExternalAttrs,
+				modifiedTime:  zipFile.ModifiedTime,
+				modifiedDate:  zipFile.ModifiedDate,
+			})
+		}
 
-			// Build a fresh FileHeader preserving only ExternalAttrs and timestamps.
-			// Copying the full original header (Flags, CRC32, CreatorVersion) causes
-			// Windows Explorer to reject the repacked ZIP (error 0x80004005).
-			fh := yzip.FileHeader{
-				Name:          zipFile.Name,
-				Method:        yzip.Deflate,
-				ExternalAttrs: zipFile.ExternalAttrs,
-				ModifiedTime:  zipFile.ModifiedTime,
-				ModifiedDate:  zipFile.ModifiedDate,
-				Comment:       zipFile.Comment,
+		if a.Password != "" {
+			// Use 7z to create a properly AES-256 encrypted ZIP that Windows Explorer accepts.
+			tmpDir, err := os.MkdirTemp("", "gophish-zip-*")
+			if err != nil {
+				return nil, err
 			}
-			if a.Password != "" {
-				fh.SetPassword(a.Password)
-				fh.SetEncryptionMethod(yzip.AES256Encryption)
+			defer os.RemoveAll(tmpDir)
+
+			var fileNames []string
+			for _, entry := range entries {
+				entryPath := filepath.Join(tmpDir, entry.name)
+				if err := os.MkdirAll(filepath.Dir(entryPath), 0700); err != nil {
+					return nil, err
+				}
+				if err := os.WriteFile(entryPath, entry.contents, 0600); err != nil {
+					return nil, err
+				}
+				fileNames = append(fileNames, entry.name)
+			}
+
+			outZip := filepath.Join(tmpDir, "_output.zip")
+			args := append([]string{"a", "-tzip", "-mem=AES256", "-p" + a.Password, outZip}, fileNames...)
+			cmd := exec.Command("7z", args...)
+			cmd.Dir = tmpDir
+			if out, cmdErr := cmd.CombinedOutput(); cmdErr != nil {
+				return nil, fmt.Errorf("7z failed: %s: %w", string(out), cmdErr)
+			}
+
+			data, err := os.ReadFile(outZip)
+			if err != nil {
+				return nil, err
+			}
+			return bytes.NewReader(data), nil
+		}
+
+		// No password — use yeka/zip writer (non-encrypted ZIPs work fine in Windows Explorer).
+		newZipArchive := new(bytes.Buffer)
+		yzipWriter := yzip.NewWriter(newZipArchive)
+		for _, entry := range entries {
+			fh := yzip.FileHeader{
+				Name:          entry.name,
+				Method:        yzip.Deflate,
+				ExternalAttrs: entry.externalAttrs,
+				ModifiedTime:  entry.modifiedTime,
+				ModifiedDate:  entry.modifiedDate,
 			}
 			newZipFile, err := yzipWriter.CreateHeader(&fh)
 			if err != nil {
 				yzipWriter.Close()
 				return nil, err
 			}
-			_, err = newZipFile.Write([]byte(tFile))
-			if err != nil {
+			if _, err = newZipFile.Write(entry.contents); err != nil {
 				yzipWriter.Close()
 				return nil, err
 			}
 		}
 		yzipWriter.Close()
-		return bytes.NewReader(patchZipAESReaderVersion(newZipArchive.Bytes())), err
+		return bytes.NewReader(newZipArchive.Bytes()), nil
 
 	case ".txt", ".html", ".ics", ".ps1":
 		b, err := ioutil.ReadAll(decodedAttachment)
