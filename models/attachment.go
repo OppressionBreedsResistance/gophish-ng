@@ -182,13 +182,17 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 				tFile = string(contents)
 			}
 
-			// Copy the original FileHeader to preserve ExternalAttrs (e.g. hidden attribute)
-			fh := zipFile.FileHeader
-			fh.CompressedSize = 0
-			fh.CompressedSize64 = 0
-			fh.UncompressedSize = 0
-			fh.UncompressedSize64 = 0
-			fh.Extra = nil // Clear to avoid duplicate AES extra fields when re-encrypting
+			// Build a fresh FileHeader preserving only ExternalAttrs and timestamps.
+			// Copying the full original header (Flags, CRC32, CreatorVersion) causes
+			// Windows Explorer to reject the repacked ZIP (error 0x80004005).
+			fh := yzip.FileHeader{
+				Name:          zipFile.Name,
+				Method:        yzip.Deflate,
+				ExternalAttrs: zipFile.ExternalAttrs,
+				ModifiedTime:  zipFile.ModifiedTime,
+				ModifiedDate:  zipFile.ModifiedDate,
+				Comment:       zipFile.Comment,
+			}
 			if a.Password != "" {
 				fh.SetPassword(a.Password)
 				fh.SetEncryptionMethod(yzip.AES256Encryption)
