@@ -51,7 +51,7 @@ var statuses = {
     },
     "Clicked Attachment": {
         color: "#9b59b6",
-        label: "label-warning",
+        label: "label-attachment",
         icon: "fa-paperclip",
         point: "ct-point-attachment"
     },
