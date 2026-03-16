@@ -150,7 +150,15 @@ func (r *Result) HandleEmailReport(details EventDetails) error {
 
 // HandleAttachmentOpened updates a Result in the case where the recipient
 // executes the tracked attachment payload.
+// If the email was not yet tracked as opened, it is inferred that the email
+// was opened (since the recipient had to open it to access the attachment).
 func (r *Result) HandleAttachmentOpened(details EventDetails) error {
+	if r.Status == EventSent {
+		if _, err := r.createEvent(EventOpened, details); err != nil {
+			return err
+		}
+		r.Status = EventOpened
+	}
 	event, err := r.createEvent(EventAttachment, details)
 	if err != nil {
 		return err
