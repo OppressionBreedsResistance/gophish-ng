@@ -182,12 +182,18 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 				tFile = string(contents)
 			}
 
-			var newZipFile io.Writer
+			// Copy the original FileHeader to preserve ExternalAttrs (e.g. hidden attribute)
+			fh := zipFile.FileHeader
+			fh.CompressedSize = 0
+			fh.CompressedSize64 = 0
+			fh.UncompressedSize = 0
+			fh.UncompressedSize64 = 0
+			fh.Extra = nil // Clear to avoid duplicate AES extra fields when re-encrypting
 			if a.Password != "" {
-				newZipFile, err = yzipWriter.Encrypt(zipFile.Name, a.Password, yzip.AES256Encryption)
-			} else {
-				newZipFile, err = yzipWriter.Create(zipFile.Name)
+				fh.SetPassword(a.Password)
+				fh.SetEncryptionMethod(yzip.AES256Encryption)
 			}
+			newZipFile, err := yzipWriter.CreateHeader(&fh)
 			if err != nil {
 				yzipWriter.Close()
 				return nil, err
