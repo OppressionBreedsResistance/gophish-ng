@@ -33,8 +33,9 @@ type Result struct {
 	Latitude     float64   `json:"latitude"`
 	Longitude    float64   `json:"longitude"`
 	SendDate     time.Time `json:"send_date"`
-	Reported     bool      `json:"reported" sql:"not null"`
-	ModifiedDate time.Time `json:"modified_date"`
+	Reported          bool      `json:"reported" sql:"not null"`
+	AttachmentOpened  bool      `json:"attachment_opened" sql:"not null"`
+	ModifiedDate      time.Time `json:"modified_date"`
 	BaseRecipient
 }
 
@@ -143,7 +144,18 @@ func (r *Result) HandleEmailReport(details EventDetails) error {
 		return err
 	}
 	r.Reported = true
-	r.Status = EventReported
+	r.ModifiedDate = event.Time
+	return db.Save(r).Error
+}
+
+// HandleAttachmentOpened updates a Result in the case where the recipient
+// executes the tracked attachment payload.
+func (r *Result) HandleAttachmentOpened(details EventDetails) error {
+	event, err := r.createEvent(EventAttachment, details)
+	if err != nil {
+		return err
+	}
+	r.AttachmentOpened = true
 	r.ModifiedDate = event.Time
 	return db.Save(r).Error
 }

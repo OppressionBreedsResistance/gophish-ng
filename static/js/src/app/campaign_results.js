@@ -49,6 +49,12 @@ var statuses = {
         icon: "fa-bullhorn",
         point: "ct-point-reported"
     },
+    "Clicked Attachment": {
+        color: "#9b59b6",
+        label: "label-warning",
+        icon: "fa-paperclip",
+        point: "ct-point-attachment"
+    },
     "Error": {
         color: "#6c7a89",
         label: "label-default",
@@ -103,6 +109,7 @@ var statusMapping = {
     "Clicked Link": "clicked",
     "Submitted Data": "submitted_data",
     "Email Reported": "reported",
+    "Clicked Attachment": "attachment",
 }
 
 // This is an underwhelming attempt at an enum
@@ -373,7 +380,8 @@ function renderTimeline(data) {
         "position": data[5],
         "status": data[6],
         "reported": data[7],
-        "send_date": data[8]
+        "send_date": data[8],
+        "attachment_opened": data[9]
     }
     results = '<div class="timeline col-sm-12 well well-lg">' +
         '<h6>Timeline for ' + escapeHtml(record.first_name) + ' ' + escapeHtml(record.last_name) +
@@ -660,6 +668,12 @@ function poll() {
             });
             $.each(campaign.results, function (i, result) {
                 email_series_data[result.status]++;
+                if (result.reported) {
+                    email_series_data['Email Reported']++
+                }
+                if (result.attachment_opened) {
+                    email_series_data['Clicked Attachment']++
+                }
                 // Backfill status values
                 var step = progressListing.indexOf(result.status)
                 for (var i = 0; i < step; i++) {
@@ -697,6 +711,7 @@ function poll() {
                         rowData[8] = moment(result.send_date).format('MMMM Do YYYY, h:mm:ss a')
                         rowData[7] = result.reported
                         rowData[6] = result.status
+                        rowData[9] = result.attachment_opened
                         resultsTable.row(i).data(rowData)
                         if (row.child.isShown()) {
                             $(row.node()).find("#caret").removeClass("fa-caret-right")
@@ -761,11 +776,12 @@ function load() {
                             "targets": [1]
                         }, {
                             "visible": false,
-                            "targets": [0, 8]
+                            "targets": [0, 8, 9]
                         },
                         {
                             "render": function (data, type, row) {
-                                return createStatusLabel(data, row[8])
+                                var displayStatus = row[9] ? "Clicked Attachment" : (row[7] ? "Email Reported" : data)
+                                return createStatusLabel(displayStatus, row[8])
                             },
                             "targets": [6]
                         },
@@ -800,9 +816,16 @@ function load() {
                         escapeHtml(result.position) || "",
                         result.status,
                         result.reported,
-                        moment(result.send_date).format('MMMM Do YYYY, h:mm:ss a')
+                        moment(result.send_date).format('MMMM Do YYYY, h:mm:ss a'),
+                        result.attachment_opened
                     ])
                     email_series_data[result.status]++;
+                    if (result.reported) {
+                        email_series_data['Email Reported']++
+                    }
+                    if (result.attachment_opened) {
+                        email_series_data['Clicked Attachment']++
+                    }
                     // Backfill status values
                     var step = progressListing.indexOf(result.status)
                     for (var i = 0; i < step; i++) {
