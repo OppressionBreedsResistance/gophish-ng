@@ -28,8 +28,8 @@ This fork includes the following changes on top of the upstream Gophish codebase
 
 ### Attachment Template Support
 
-- **`.ps1` files** — PowerShell attachments support placeholder substitution (`{{.URL}}`, `{{.FirstName}}`, etc.), the same way `.txt` and `.html` files do.
-- **`.zip` files containing `.ps1`** — When a `.zip` archive is used as an attachment, Gophish-NG unpacks it in memory, applies template substitution to any `.ps1` (and `.xml`/`.rels`) files inside, and repacks it before sending.
+- **`.ps1` and `.bat` files** — PowerShell and batch script attachments support placeholder substitution (`{{.URL}}`, `{{.FirstName}}`, etc.), the same way `.txt` and `.html` files do.
+- **`.zip` files containing `.ps1` or `.bat`** — When a `.zip` archive is used as an attachment, Gophish-NG unpacks it in memory, applies template substitution to any `.ps1`, `.bat` (and `.xml`/`.rels`) files inside, and repacks it before sending.
 - **Password-protected `.zip` attachments** — ZIP archives encrypted with ZipCrypto are fully supported. Gophish-NG decrypts the archive, applies placeholder substitution, and re-encrypts before sending. The password is stored per-attachment in the database and can be set in the template UI.
 
 #### How to use password-protected ZIP attachments
