@@ -45,6 +45,10 @@ gophish
 dist/
 build/
 
+# Track static dist files (served directly by the app)
+!static/js/dist/
+!static/css/dist/
+
 # Logs
 *.log
 

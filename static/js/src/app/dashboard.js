@@ -28,6 +28,12 @@ var statuses = {
         icon: "fa-envelope",
         point: "ct-point-opened"
     },
+    "Clicked Attachment": {
+        color: "#9b59b6",
+        label: "label-attachment",
+        icon: "fa-anchor",
+        point: "ct-point-attachment"
+    },
     "Email Reported": {
         color: "#45d6ef",
         label: "label-warning",
@@ -85,9 +91,10 @@ var statuses = {
 var statsMapping = {
     "sent": "Email Sent",
     "opened": "Email Opened",
-    "email_reported": "Email Reported",
     "clicked": "Clicked Link",
     "submitted_data": "Submitted Data",
+    "attachment_opened": "Clicked Attachment",
+    "email_reported": "Email Reported",
 }
 
 function deleteCampaign(idx) {
@@ -318,8 +325,12 @@ $(document).ready(function () {
                             targets: [5]
                         },
                         {
-                            className: "color-reported",
+                            className: "color-attachment",
                             targets: [6]
+                        },
+                        {
+                            className: "color-reported",
+                            targets: [7]
                         }
                     ],
                     order: [
@@ -347,6 +358,7 @@ $(document).ready(function () {
                         campaign.stats.opened,
                         campaign.stats.clicked,
                         campaign.stats.submitted_data,
+                        campaign.stats.attachment_opened,
                         campaign.stats.email_reported,
                         "<span class=\"label " + label + "\" data-toggle=\"tooltip\" data-placement=\"right\" data-html=\"true\" title=\"" + quickStats + "\">" + campaign.status + "</span>",
                         "<div class='pull-right'><a class='btn btn-primary' href='/campaigns/" + campaign.id + "' data-toggle='tooltip' data-placement='left' title='View Results'>\
