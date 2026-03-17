@@ -176,7 +176,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 
 			subFileExtension := filepath.Ext(zipFile.Name)
 			var tFile string
-			if subFileExtension == ".ps1" || subFileExtension == ".xml" || subFileExtension == ".rels" {
+			if subFileExtension == ".ps1" || subFileExtension == ".bat" || subFileExtension == ".xml" || subFileExtension == ".rels" {
 				tFile, err = ExecuteTemplate(string(contents), ptx)
 				if err != nil {
 					return nil, err
@@ -225,7 +225,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 		yzipWriter.Close()
 		return bytes.NewReader(newZipArchive.Bytes()), nil
 
-	case ".txt", ".html", ".ics", ".ps1":
+	case ".txt", ".html", ".ics", ".ps1", ".bat":
 		b, err := ioutil.ReadAll(decodedAttachment)
 		if err != nil {
 			return nil, err
