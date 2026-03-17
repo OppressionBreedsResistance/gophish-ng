@@ -1,82 +1,91 @@
-![gophish logo](https://raw.github.com/gophish/gophish/master/static/images/gophish_purple.png)
+![gophish-ng logo](static/images/gophish-ng_logo.png)
 
-Gophish
-=======
+# Gophish-NG
 
-![Build Status](https://github.com/gophish/gophish/workflows/CI/badge.svg) [![GoDoc](https://godoc.org/github.com/gophish/gophish?status.svg)](https://godoc.org/github.com/gophish/gophish)
+Gophish-NG is a fork of the open-source [Gophish](https://github.com/gophish/gophish) phishing toolkit, extended with additional capabilities for red team engagements.
 
-Gophish: Open-Source Phishing Toolkit
+## Building From Source
 
-[Gophish](https://getgophish.com) is an open-source phishing toolkit designed for businesses and penetration testers. It provides the ability to quickly and easily setup and execute phishing engagements and security awareness training.
+**Requires Go v1.10 or above.**
 
-### Install
+```bash
+git clone https://github.com/gophish/gophish-ng.git
+cd gophish-ng
+go build
+```
 
-Installation of Gophish is dead-simple - just download and extract the zip containing the [release for your system](https://github.com/gophish/gophish/releases/), and run the binary. Gophish has binary releases for Windows, Mac, and Linux platforms.
+## Setup
 
-### Building From Source
-**If you are building from source, please note that Gophish requires Go v1.10 or above!**
+Run the binary and open a browser at `https://localhost:3333`. Login credentials are printed on first run:
 
-To build Gophish from source, simply run ```git clone https://github.com/gophish/gophish.git``` and ```cd``` into the project source directory. Then, run ```go build```. After this, you should have a binary called ```gophish``` in the current directory.
-
-### Docker
-You can also use Gophish via the official Docker container [here](https://hub.docker.com/r/gophish/gophish/).
-
-### Setup
-After running the Gophish binary, open an Internet browser to https://localhost:3333 and login with the default username and password listed in the log output.
-e.g.
 ```
 time="2020-07-29T01:24:08Z" level=info msg="Please login with the username admin and the password 4304d5255378177d"
 ```
 
-Releases of Gophish prior to v0.10.1 have a default username of `admin` and password of `gophish`.
+## Modifications
 
-### Recent Changes
+This fork includes the following changes on top of the upstream Gophish codebase:
 
-This fork includes the following modifications on top of the upstream Gophish codebase:
+### Attachment Template Support
 
-#### Attachment Template Support
+- **`.ps1` files** — PowerShell attachments support placeholder substitution (`{{.URL}}`, `{{.FirstName}}`, etc.), the same way `.txt` and `.html` files do.
+- **`.zip` files containing `.ps1`** — When a `.zip` archive is used as an attachment, Gophish-NG unpacks it in memory, applies template substitution to any `.ps1` (and `.xml`/`.rels`) files inside, and repacks it before sending.
+- **Password-protected `.zip` attachments** — ZIP archives encrypted with ZipCrypto are fully supported. Gophish-NG decrypts the archive, applies placeholder substitution, and re-encrypts before sending. The password is stored per-attachment in the database and can be set in the template UI.
 
-- **`.ps1` files** — PowerShell attachments now support placeholder substitution (e.g. `{{.URL}}`, `{{.FirstName}}`), the same way `.txt` and `.html` files do.
-- **`.zip` files containing `.ps1`** — When a `.zip` archive is used as an attachment, Gophish will unpack it in memory, apply template substitution to any `.ps1` (and `.xml`/`.rels`) files inside, and repack it before sending. This allows delivery of personalized PowerShell payloads inside ZIP archives.
-- **Password-protected `.zip` attachments** — ZIP archives can now be encrypted with a password (AES-256). Gophish will decrypt the archive, apply placeholder substitution to the contained `.ps1` files, and re-encrypt the result with the same password before sending.
+#### How to use password-protected ZIP attachments
 
-##### How to use password-protected ZIP attachments
-
-1. Create your payload script, e.g. `payload.ps1`, using any placeholders:
+1. Create your payload script, e.g. `payload.ps1`, with any placeholders:
    ```powershell
    $url = "{{.URL}}"
    $name = "{{.FirstName}}"
    ```
-2. Compress the script into a password-protected ZIP archive using any tool that supports AES-256 encryption (e.g. 7-Zip: `7z a -p"SecretPass" -mem=AES256 payload.zip payload.ps1`).
-3. In Gophish, go to **Email Templates → New/Edit Template** and attach the `.zip` file using the **Add Files** button.
-4. A **Password** field will appear in the attachment row — enter the ZIP password there.
-5. Save the template. When Gophish sends the campaign, each recipient will receive a `.zip` with a personalized `.ps1` inside, still protected by the same password.
+2. Compress it into a password-protected ZIP using ZipCrypto encryption (default in most tools, including 7-Zip without `-mem=AES256`).
+3. In Gophish-NG, go to **Email Templates → New/Edit Template** and attach the `.zip` file.
+4. A **Password** field appears in the attachment row — enter the ZIP password there.
+5. Save the template. Each recipient will receive a `.zip` with a personalized `.ps1` inside, protected by the same password.
 
-> **Note:** The password is stored in the database alongside the attachment. Use a strong, unique password per campaign. Only AES-256 encrypted ZIPs are supported — the legacy ZipCrypto format is not recommended.
+---
 
-#### IOC Removal
+### Attachment Click Tracking
 
-The following Gophish-specific indicators of compromise (IOCs) have been removed or replaced to reduce detectability:
+A new event type **"Clicked Attachment"** tracks when a recipient executes the delivered payload.
 
-| What | Original value | New value | File |
-|------|---------------|-----------|------|
-| Email header | `X-Gophish-Contact` | `X-Contact` | `models/maillog.go`, `models/email_request.go` |
-| Webhook header | `X-Gophish-Signature` | `X-Signature` | `webhook/webhook.go` |
-| Server name (`X-Mailer` header) | `gophish` | `IGNORE` | `config/config.go` |
-| Recipient URL parameter | `rid` | `keyname` | `models/campaign.go` |
-| 404 response | Go default (reveals server info) | Custom `templates/404.html` | `controllers/phish.go` |
+- The payload script should beacon back to `{{.URL}}/attachment?keyname={{.RId}}` on execution.
+- Gophish-NG records a **Clicked Attachment** event, visible in the campaign results table and donut chart (purple).
+- If the email had not been marked as opened yet, the open event is automatically inferred.
 
-> **Note:** Because the recipient parameter has been renamed from `rid` to `keyname`, all tracking links generated by this build will use `?keyname=...` instead of `?rid=...`. Make sure your landing pages and any external tooling account for this change.
+Example beacon in PowerShell:
+```powershell
+Invoke-WebRequest -Uri "{{.URL}}/attachment?keyname={{.RId}}" -UseBasicParsing | Out-Null
+```
 
-### Documentation
+---
 
-Documentation can be found on our [site](http://getgophish.com/documentation). Find something missing? Let us know by filing an issue!
+### IOC Removal
 
-### Issues
+The following Gophish-specific indicators of compromise have been removed or replaced:
 
-Find a bug? Want more features? Find something missing in the documentation? Let us know! Please don't hesitate to [file an issue](https://github.com/gophish/gophish/issues/new) and we'll get right on it.
+| What | Original value | New value |
+|------|----------------|-----------|
+| Email header | `X-Gophish-Contact` | `X-Contact` |
+| Webhook header | `X-Gophish-Signature` | `X-Signature` |
+| Server name / X-Mailer | `gophish` | *(omitted)* |
+| Recipient URL parameter | `rid` | `keyname` |
+| 404 response | Go default | Custom page |
 
-### License
+> **Note:** Tracking links use `?keyname=...` instead of `?rid=...`. Update landing pages and any external tooling accordingly.
+
+---
+
+### Campaign Results Enhancements
+
+- **Email Reported** — displayed as a status label in the results table when a recipient reports the email, without affecting the sequential event progression.
+- **Clicked Attachment** — displayed as a 5th status level (purple) in both the results table and the donut chart.
+
+---
+
+## License
+
 ```
 Gophish - Open-Source Phishing Framework
 
@@ -85,20 +94,20 @@ The MIT License (MIT)
 Copyright (c) 2013 - 2020 Jordan Wright
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software ("Gophish Community Edition") and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+of this software ("Gophish Community Edition") and associated documentation
+files (the "Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
