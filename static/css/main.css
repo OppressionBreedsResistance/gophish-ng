@@ -413,6 +413,10 @@ p {
 .label-attachment {
     background-color: #9b59b6 !important;
 }
+.attachment-password {
+    box-sizing: border-box !important;
+    width: 100% !important;
+}
 
 .gophish-editor {
     font-family: 'Courier New', Monospace !important;
