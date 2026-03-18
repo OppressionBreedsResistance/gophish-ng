@@ -260,6 +260,17 @@ func (m *MailLog) Generate(msg *gomail.Message) error {
 		addAttachment(msg, a, ptx)
 	}
 
+	// Embed QR code inline if the template uses {{.QR}}
+	if ptx.QRName != "" {
+		qrAttachment := Attachment{
+			Name:        ptx.QRName,
+			Content:     ptx.QRBase64,
+			Type:        "image/png",
+			vanillaFile: true,
+		}
+		addAttachment(msg, qrAttachment, ptx)
+	}
+
 	return nil
 }
 
