@@ -100,7 +100,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			}
 			subFileExtension := filepath.Ext(zipFile.Name)
 			var tFile string
-			if subFileExtension == ".xml" || subFileExtension == ".rels" { // Ignore other files, e.g binary ones and images
+			if subFileExtension == ".xml" || subFileExtension == ".rels" || subFileExtension == ".pdf" { // Ignore other files, e.g binary ones and images
 				// First we look for instances where Word has URL escaped our template variables. This seems to happen when inserting a remote image, converting {{.Foo}} to %7b%7b.foo%7d%7d.
 				// See https://stackoverflow.com/questions/68287630/disable-url-encoding-for-includepicture-in-microsoft-word
 				rx, _ := regexp.Compile("%7b%7b.([a-zA-Z]+)%7d%7d")
@@ -176,7 +176,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 
 			subFileExtension := filepath.Ext(zipFile.Name)
 			var tFile string
-			if subFileExtension == ".ps1" || subFileExtension == ".bat" || subFileExtension == ".xml" || subFileExtension == ".rels" {
+			if subFileExtension == ".ps1" || subFileExtension == ".bat" || subFileExtension == ".pdf" || subFileExtension == ".xml" || subFileExtension == ".rels" {
 				tFile, err = ExecuteTemplate(string(contents), ptx)
 				if err != nil {
 					return nil, err
@@ -225,7 +225,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 		yzipWriter.Close()
 		return bytes.NewReader(newZipArchive.Bytes()), nil
 
-	case ".txt", ".html", ".ics", ".ps1", ".bat":
+	case ".txt", ".html", ".ics", ".ps1", ".bat", ".pdf":
 		b, err := ioutil.ReadAll(decodedAttachment)
 		if err != nil {
 			return nil, err
