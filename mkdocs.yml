@@ -43,6 +43,7 @@ nav:
   - Home: index.md
   - Getting Started:
     - Installation: getting-started/installation.md
+    - VPS Quick Setup: getting-started/vps-setup.md
     - Configuration: getting-started/configuration.md
   - User Guide:
     - Campaigns: user-guide/campaigns.md
