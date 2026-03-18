@@ -28,6 +28,30 @@ When a `.zip` file is used as an attachment, Gophish-NG:
 
 See [Password-Protected ZIP](../features/password-zip.md) for full setup instructions.
 
+## Attachment Click Tracking
+
+Gophish-NG can track when a recipient executes the delivered payload (e.g. runs a `.ps1` script). To enable tracking, the payload must beacon back to the phishing server using the following URL structure:
+
+```
+{{.URL}}/attachment?keyname={{.RId}}
+```
+
+### PowerShell example
+
+```powershell
+Invoke-WebRequest -Uri "{{.URL}}/attachment?keyname={{.RId}}" -UseBasicParsing | Out-Null
+```
+
+### Batch example
+
+```bat
+powershell -Command "Invoke-WebRequest -Uri '{{.URL}}/attachment?keyname={{.RId}}' -UseBasicParsing | Out-Null"
+```
+
+When the beacon request is received, Gophish-NG records a **Clicked Attachment** event for the recipient. If the email had not been marked as opened yet, an **Email Opened** event is also automatically inferred.
+
+See [Attachment Tracking](../features/attachment-tracking.md) for more details.
+
 ## Adding an Attachment
 
 1. Go to **Email Templates → New/Edit Template**

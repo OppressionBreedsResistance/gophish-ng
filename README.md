@@ -47,6 +47,22 @@ This fork includes the following changes on top of the upstream Gophish codebase
 
 ---
 
+### QR Code Placeholder
+
+Use `{{.QR}}` in any email template to embed a per-recipient QR code that links to the phishing URL.
+
+- Generated server-side and embedded as an inline image (CID) — no external requests needed.
+- Each recipient gets a unique QR code pointing to their personalized phishing URL (with `keyname` parameter).
+- Available in the CKEditor autocomplete dropdown.
+
+Example:
+```html
+<p>Scan the QR code below to access the document:</p>
+{{.QR}}
+```
+
+---
+
 ### Attachment Click Tracking
 
 A new event type **"Clicked Attachment"** tracks when a recipient executes the delivered payload.

@@ -24,6 +24,9 @@ type PhishingTemplateContext struct {
 	TrackingURL string
 	RId         string
 	BaseURL     string
+	QR          string // HTML <img> tag referencing the QR code via CID
+	QRName      string // filename used for CID embedding
+	QRBase64    string // base64-encoded PNG of the QR code
 	BaseRecipient
 }
 
@@ -61,7 +64,7 @@ func NewPhishingTemplateContext(ctx TemplateContext, r BaseRecipient, rid string
 	trackingURL.Path = path.Join(trackingURL.Path, "/track")
 	trackingURL.RawQuery = q.Encode()
 
-	return PhishingTemplateContext{
+	ptx := PhishingTemplateContext{
 		BaseRecipient: r,
 		BaseURL:       baseURL.String(),
 		URL:           phishURL.String(),
@@ -69,7 +72,15 @@ func NewPhishingTemplateContext(ctx TemplateContext, r BaseRecipient, rid string
 		Tracker:       "<img alt='' style='display: none' src='" + trackingURL.String() + "'/>",
 		From:          fn,
 		RId:           rid,
-	}, nil
+	}
+
+	if qrBase64, qrName, err := generateQRCode(phishURL.String(), rid); err == nil {
+		ptx.QRBase64 = qrBase64
+		ptx.QRName = qrName
+		ptx.QR = `<img src="cid:` + qrName + `">`
+	}
+
+	return ptx, nil
 }
 
 // ExecuteTemplate creates a templated string based on the provided
