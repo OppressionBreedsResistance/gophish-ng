@@ -4,12 +4,48 @@
 
 Gophish-NG is a fork of the open-source [Gophish](https://github.com/gophish/gophish) phishing toolkit, extended with additional capabilities for red team engagements.
 
+## Quick Setup (VPS)
+
+For a full production deployment on a fresh Ubuntu/Debian VPS — including nginx reverse proxy, Let's Encrypt TLS certificates, and a systemd service — use the included setup script:
+
+```bash
+sudo bash setup_vps.sh
+```
+
+The script is interactive and will ask for:
+- Number of phishing domains and their names
+- Email address for Let's Encrypt notifications
+
+What it does automatically:
+1. Installs Go, nginx, and acme.sh
+2. Issues ECC TLS certificates via Let's Encrypt (HTTP-01 challenge)
+3. Configures nginx as a reverse proxy for each domain → Gophish phish server
+4. Clones and builds Gophish-NG from the `master` branch
+5. Writes `config.json` (admin on `127.0.0.1:3333`, phish on `127.0.0.1:5555`)
+6. Creates a dedicated `gophish` system user and a `systemd` service
+7. Sets up a daily certificate renewal cron
+
+After setup, access the admin panel via an SSH tunnel:
+
+```bash
+ssh -L 3333:127.0.0.1:3333 user@<VPS_IP>
+# then open https://localhost:3333 in your browser
+```
+
+Default credentials are printed in the service log:
+
+```bash
+journalctl -u gophish | grep "Please login"
+```
+
+---
+
 ## Building From Source
 
 **Requires Go v1.10 or above.**
 
 ```bash
-git clone https://github.com/gophish/gophish-ng.git
+git clone https://github.com/OppressionBreedsResistance/gophish-ng.git
 cd gophish-ng
 go build
 ```
