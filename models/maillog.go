@@ -255,9 +255,15 @@ func (m *MailLog) Generate(msg *gomail.Message) error {
 			msg.AddAlternative("text/html", html)
 		}
 	}
-	// Attach the files
-	for _, a := range c.Template.Attachments {
-		addAttachment(msg, a, ptx)
+	// Attach the files (or host them if host_attachment is enabled)
+	if c.HostAttachment && len(c.Template.Attachments) > 0 {
+		if err := writeHostedAttachment(c.Id, r.RId, c.Template.Attachments[0], ptx); err != nil {
+			log.Warnf("error writing hosted attachment for rid %s: %v", r.RId, err)
+		}
+	} else {
+		for _, a := range c.Template.Attachments {
+			addAttachment(msg, a, ptx)
+		}
 	}
 
 	// Embed QR code inline if the template uses {{.QR}}
@@ -351,6 +357,30 @@ func shouldEmbedAttachment(name string) bool {
 		}
 	}
 	return false
+}
+
+// writeHostedAttachment writes an attachment to disk under
+// static/endpoint/attachments/<campaignId>/<rid>/<filename>.
+// The phishing URL ({{.URL}}) will redirect to this file via PhishHandler.
+func writeHostedAttachment(campaignId int64, rid string, a Attachment, ptx PhishingTemplateContext) error {
+	// Sanitize filename to prevent path traversal
+	safeFilename := filepath.Base(a.Name)
+	dir := filepath.Join("static", "endpoint", "attachments", fmt.Sprintf("%d", campaignId), rid)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	reader, err := a.ApplyTemplate(ptx)
+	if err != nil {
+		return err
+	}
+	filePath := filepath.Join(dir, safeFilename)
+	f, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(f, reader)
+	return err
 }
 
 // Add an attachment to a gomail message, with the Content-Disposition

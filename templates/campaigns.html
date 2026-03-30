@@ -91,7 +91,7 @@
                     <select class="form-control" placeholder="Template Name" id="template" />
                     <option></option>
                     </select>
-                    <label class="control-label" for="page">Landing Page:</label>
+                    <label class="control-label" for="page">Landing Page: <small id="page-note" style="display:none;color:#888;font-weight:normal">(not used when hosting attachment)</small></label>
                     <select class="form-control" placeholder="Landing Page" id="page" />
                     <option></option>
                     </select>
@@ -124,6 +124,12 @@
                     </div>
                     <label class="control-label" for="users">Groups:</label>
                     <select class="form-control" id="users" multiple="multiple"></select>
+                    <div class="checkbox checkbox-primary" style="margin-top:10px">
+                        <input id="host_attachment" type="checkbox" onchange="toggleHostAttachment(this)">
+                        <label for="host_attachment">Host attachment
+                            <i class="fa fa-question-circle" data-toggle="tooltip" data-placement="right" title="If the email template has an attachment, it will be hosted on the server and the phishing URL in the email will point directly to the file download instead of the landing page."></i>
+                        </label>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">

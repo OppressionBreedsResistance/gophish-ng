@@ -26,17 +26,25 @@ type PhishServer struct {
 	KeyPath   string `json:"key_path"`
 }
 
+// TurnstileConfig holds the Cloudflare Turnstile site/secret key pair.
+// Leave both fields empty to disable Turnstile protection.
+type TurnstileConfig struct {
+	SiteKey   string `json:"site_key"`
+	SecretKey string `json:"secret_key"`
+}
+
 // Config represents the configuration information.
 type Config struct {
-	AdminConf      AdminServer `json:"admin_server"`
-	PhishConf      PhishServer `json:"phish_server"`
-	DBName         string      `json:"db_name"`
-	DBPath         string      `json:"db_path"`
-	DBSSLCaPath    string      `json:"db_sslca_path"`
-	MigrationsPath string      `json:"migrations_prefix"`
-	TestFlag       bool        `json:"test_flag"`
-	ContactAddress string      `json:"contact_address"`
-	Logging        *log.Config `json:"logging"`
+	AdminConf      AdminServer     `json:"admin_server"`
+	PhishConf      PhishServer     `json:"phish_server"`
+	DBName         string          `json:"db_name"`
+	DBPath         string          `json:"db_path"`
+	DBSSLCaPath    string          `json:"db_sslca_path"`
+	MigrationsPath string          `json:"migrations_prefix"`
+	TestFlag       bool            `json:"test_flag"`
+	ContactAddress string          `json:"contact_address"`
+	Logging        *log.Config     `json:"logging"`
+	Turnstile      TurnstileConfig `json:"turnstile"`
 }
 
 // Version contains the current gophish version

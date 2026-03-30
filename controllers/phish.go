@@ -4,11 +4,19 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,6 +83,39 @@ type PhishingServer struct {
 	server         *http.Server
 	config         config.PhishServer
 	contactAddress string
+	turnstile      config.TurnstileConfig
+}
+
+// turnstileCookieName is the name of the cookie set after a successful Turnstile challenge.
+const turnstileCookieName = "ts_v"
+
+// turnstileCookieTTL is how long a verified Turnstile session cookie is valid.
+const turnstileCookieTTL = 3600 // 1 hour
+
+// turnstileChallengeTmpl is the HTML page shown to visitors before they can access a landing page.
+var turnstileChallengeTmpl = template.Must(template.New("ts").Parse(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cloudflare</title>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<style>
+body{margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f6f6ef}
+</style>
+</head>
+<body>
+<form id="tsf" action="/ts-verify" method="POST">
+  <input type="hidden" name="{{.Param}}" value="{{.RId}}">
+  <div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-callback="onSuccess"></div>
+</form>
+<script>function onSuccess(){document.getElementById("tsf").submit()}</script>
+</body>
+</html>`))
+
+// turnstileVerifyResponse maps the fields we care about from Cloudflare's siteverify API.
+type turnstileVerifyResponse struct {
+	Success bool `json:"success"`
 }
 
 // NewPhishingServer returns a new instance of the phishing server with
@@ -104,6 +145,134 @@ func WithContactAddress(addr string) PhishingServerOption {
 	}
 }
 
+// WithTurnstile configures Cloudflare Turnstile bot protection on the phishing server.
+func WithTurnstile(tc config.TurnstileConfig) PhishingServerOption {
+	return func(ps *PhishingServer) {
+		ps.turnstile = tc
+	}
+}
+
+// turnstileEnabled returns true when both Turnstile keys are configured.
+func (ps *PhishingServer) turnstileEnabled() bool {
+	return ps.turnstile.SiteKey != "" && ps.turnstile.SecretKey != ""
+}
+
+// turnstileSign returns an HMAC-SHA256 signature over the given message using the secret key.
+func (ps *PhishingServer) turnstileSign(message string) string {
+	mac := hmac.New(sha256.New, []byte(ps.turnstile.SecretKey))
+	mac.Write([]byte(message))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// isTurnstileVerified checks whether the request carries a valid Turnstile session cookie for the given RId.
+func (ps *PhishingServer) isTurnstileVerified(r *http.Request, rid string) bool {
+	cookie, err := r.Cookie(turnstileCookieName)
+	if err != nil {
+		return false
+	}
+	parts := strings.SplitN(cookie.Value, "|", 3)
+	if len(parts) != 3 {
+		return false
+	}
+	cookieRid, tsStr, sig := parts[0], parts[1], parts[2]
+	if cookieRid != rid {
+		return false
+	}
+	ts, err := strconv.ParseInt(tsStr, 10, 64)
+	if err != nil {
+		return false
+	}
+	if time.Now().Unix()-ts > turnstileCookieTTL {
+		return false
+	}
+	expected := ps.turnstileSign(cookieRid + "|" + tsStr)
+	return hmac.Equal([]byte(sig), []byte(expected))
+}
+
+// setTurnstileCookie writes a signed session cookie for the given RId.
+func (ps *PhishingServer) setTurnstileCookie(w http.ResponseWriter, rid string) {
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	payload := rid + "|" + ts
+	sig := ps.turnstileSign(payload)
+	http.SetCookie(w, &http.Cookie{
+		Name:     turnstileCookieName,
+		Value:    payload + "|" + sig,
+		MaxAge:   turnstileCookieTTL,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Path:     "/",
+	})
+}
+
+// verifyTurnstileToken calls the Cloudflare siteverify API and returns true on success.
+func (ps *PhishingServer) verifyTurnstileToken(token, remoteIP string) bool {
+	resp, err := http.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify",
+		url.Values{
+			"secret":   {ps.turnstile.SecretKey},
+			"response": {token},
+			"remoteip": {remoteIP},
+		})
+	if err != nil {
+		log.Warnf("turnstile: siteverify request failed: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+	var result turnstileVerifyResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return false
+	}
+	return result.Success
+}
+
+// serveTurnstileChallenge renders the Turnstile challenge page.
+func (ps *PhishingServer) serveTurnstileChallenge(w http.ResponseWriter, rid string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	err := turnstileChallengeTmpl.Execute(w, struct {
+		SiteKey string
+		RId     string
+		Param   string
+	}{
+		SiteKey: ps.turnstile.SiteKey,
+		RId:     rid,
+		Param:   models.RecipientParameter,
+	})
+	if err != nil {
+		log.Error(err)
+	}
+}
+
+// TurnstileVerifyHandler handles the POST from the Turnstile challenge page,
+// verifies the token with Cloudflare, and on success sets a session cookie
+// before redirecting the visitor back to the phishing page.
+func (ps *PhishingServer) TurnstileVerifyHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	rid := r.FormValue(models.RecipientParameter)
+	token := r.FormValue("cf-turnstile-response")
+	if rid == "" || token == "" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr
+	}
+	if !ps.verifyTurnstileToken(token, ip) {
+		log.Warnf("turnstile: challenge failed for rid %s", rid)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	ps.setTurnstileCookie(w, rid)
+	returnURL := fmt.Sprintf("/?%s=%s", models.RecipientParameter, url.QueryEscape(rid))
+	http.Redirect(w, r, returnURL, http.StatusFound)
+}
+
 // Start launches the phishing server, listening on the configured address.
 func (ps *PhishingServer) Start() {
 	if ps.config.UseTLS {
@@ -128,11 +297,59 @@ func (ps *PhishingServer) Shutdown() error {
 	return ps.server.Shutdown(ctx)
 }
 
+// extractRIdFromPath pulls the RId out of a hosted-attachment path:
+// /static/attachments/<campaignId>/<RId>/<filename>
+func extractRIdFromPath(path string) string {
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	// ["static", "attachments", "<campaignId>", "<RId>", "<filename>"]
+	if len(parts) >= 5 && parts[0] == "static" && parts[1] == "attachments" {
+		return parts[3]
+	}
+	return ""
+}
+
+// turnstileMiddleware wraps the entire phishing router and enforces the
+// Cloudflare Turnstile challenge for every request except the exempt paths.
+func (ps *PhishingServer) turnstileMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !ps.turnstileEnabled() {
+			next.ServeHTTP(w, r)
+			return
+		}
+		path := r.URL.Path
+		// Exempt: verification endpoint, email-open pixels, attachment tracking
+		// (attachment payloads are scripts/macros with no browser session)
+		// and robots.
+		if path == "/ts-verify" ||
+			path == "/track" || strings.HasSuffix(path, "/track") ||
+			path == "/attachment" || strings.HasSuffix(path, "/attachment") ||
+			path == "/robots.txt" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Extract RId from query param (most routes) or from path (hosted attachments)
+		rid := r.URL.Query().Get(models.RecipientParameter)
+		if rid == "" {
+			rid = extractRIdFromPath(path)
+		}
+		if rid == "" || !ps.isTurnstileVerified(r, rid) {
+			if rid == "" {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+			ps.serveTurnstileChallenge(w, rid)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // CreatePhishingRouter creates the router that handles phishing connections.
 func (ps *PhishingServer) registerRoutes() {
 	router := mux.NewRouter()
 	fileServer := http.FileServer(unindexed.Dir("./static/endpoint/"))
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", fileServer))
+	router.HandleFunc("/ts-verify", ps.TurnstileVerifyHandler).Methods("POST")
 	router.HandleFunc("/track", ps.TrackHandler)
 	router.HandleFunc("/robots.txt", ps.RobotsHandler)
 	router.HandleFunc("/{path:.*}/track", ps.TrackHandler)
@@ -149,6 +366,9 @@ func (ps *PhishingServer) registerRoutes() {
 	// Respect X-Forwarded-For and X-Real-IP headers in case we're behind a
 	// reverse proxy.
 	phishHandler = handlers.ProxyHeaders(phishHandler)
+
+	// Cloudflare Turnstile — wraps the entire router (no-op when keys are empty)
+	phishHandler = ps.turnstileMiddleware(phishHandler)
 
 	// Setup logging
 	phishHandler = handlers.CombinedLoggingHandler(log.Writer(), phishHandler)
@@ -304,6 +524,12 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 		err = rs.HandleClickedLink(d)
 		if err != nil {
 			log.Error(err)
+		}
+		if c.HostAttachment && len(c.Template.Attachments) > 0 {
+			safeFilename := filepath.Base(c.Template.Attachments[0].Name)
+			attachmentURL := fmt.Sprintf("/static/attachments/%d/%s/%s", c.Id, rs.RId, url.PathEscape(safeFilename))
+			http.Redirect(w, r, attachmentURL, http.StatusFound)
+			return
 		}
 	case r.Method == "POST":
 		err = rs.HandleFormSubmit(d)

@@ -19,5 +19,9 @@
 	"logging": {
 		"filename": "",
 		"level": ""
+	},
+	"turnstile": {
+		"site_key": "",
+		"secret_key": ""
 	}
 }

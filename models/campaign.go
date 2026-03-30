@@ -2,7 +2,10 @@ package models
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"time"
 
 	log "github.com/gophish/gophish/logger"
@@ -28,9 +31,10 @@ type Campaign struct {
 	Results       []Result  `json:"results,omitempty"`
 	Groups        []Group   `json:"groups,omitempty"`
 	Events        []Event   `json:"timeline,omitempty"`
-	SMTPId        int64     `json:"-"`
-	SMTP          SMTP      `json:"smtp"`
-	URL           string    `json:"url"`
+	SMTPId         int64     `json:"-"`
+	SMTP           SMTP      `json:"smtp"`
+	URL            string    `json:"url"`
+	HostAttachment bool      `json:"host_attachment"`
 }
 
 // CampaignResults is a struct representing the results from a campaign
@@ -640,6 +644,9 @@ func DeleteCampaign(id int64) error {
 	if err != nil {
 		log.Error(err)
 	}
+	// Clean up any hosted attachments for this campaign
+	campaignDir := filepath.Join("static", "endpoint", "attachments", fmt.Sprintf("%d", id))
+	os.RemoveAll(campaignDir)
 	return err
 }
 
