@@ -11,6 +11,13 @@ var labels = {
 var campaigns = []
 var campaign = {}
 
+// toggleHostAttachment greys out the Landing Page selector when hosting is enabled
+function toggleHostAttachment(checkbox) {
+    var checked = $(checkbox).is(":checked")
+    $("#page").prop("disabled", checked).trigger("change.select2")
+    $("#page-note").toggle(checked)
+}
+
 // Launch attempts to POST to /campaigns/
 function launch() {
     Swal.fire({
@@ -52,6 +59,7 @@ function launch() {
                     launch_date: moment($("#launch_date").val(), "MMMM Do YYYY, h:mm a").utc().format(),
                     send_by_date: send_by_date || null,
                     groups: groups,
+                    host_attachment: $("#host_attachment").is(":checked"),
                 }
                 // Submit the campaign
                 api.campaigns.post(campaign)

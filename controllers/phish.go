@@ -9,6 +9,8 @@ import (
 	"html/template"
 	"net"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -304,6 +306,12 @@ func (ps *PhishingServer) PhishHandler(w http.ResponseWriter, r *http.Request) {
 		err = rs.HandleClickedLink(d)
 		if err != nil {
 			log.Error(err)
+		}
+		if c.HostAttachment && len(c.Template.Attachments) > 0 {
+			safeFilename := filepath.Base(c.Template.Attachments[0].Name)
+			attachmentURL := fmt.Sprintf("/static/attachments/%d/%s/%s", c.Id, rs.RId, url.PathEscape(safeFilename))
+			http.Redirect(w, r, attachmentURL, http.StatusFound)
+			return
 		}
 	case r.Method == "POST":
 		err = rs.HandleFormSubmit(d)

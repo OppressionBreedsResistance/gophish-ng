@@ -18,15 +18,15 @@ type TemplateContext interface {
 // PhishingTemplateContext is the context that is sent to any template, such
 // as the email or landing page content.
 type PhishingTemplateContext struct {
-	From        string
-	URL         string
-	Tracker     string
-	TrackingURL string
-	RId         string
-	BaseURL     string
-	QR          string // HTML <img> tag referencing the QR code via CID
-	QRName      string // filename used for CID embedding
-	QRBase64    string // base64-encoded PNG of the QR code
+	From             string
+	URL              string
+	Tracker          string
+	TrackingURL      string
+	RId              string
+	BaseURL          string
+	QR        string // HTML <img> tag referencing the QR code via CID
+	QRName    string // filename used for CID embedding
+	QRBase64  string // base64-encoded PNG of the QR code
 	BaseRecipient
 }
 
