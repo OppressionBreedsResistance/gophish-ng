@@ -7,6 +7,8 @@
 | Feature | Description |
 |---------|-------------|
 | [Attachment Tracking](features/attachment-tracking.md) | Track when a recipient executes a delivered payload |
+| [Hosted Attachments](features/hosted-attachments.md) | Serve the payload directly from the phishing server — bypasses email attachment scanning |
+| [Cloudflare Turnstile](features/turnstile.md) | Silent bot protection — blocks scanners before they reach your landing page |
 | [Password-Protected ZIP](features/password-zip.md) | Send encrypted ZIP attachments with per-template passwords |
 | [IOC Removal](features/ioc-removal.md) | Replace Gophish-specific headers and parameters |
 | Script support | `.ps1`, `.bat`, `.pdf` files support placeholder substitution |

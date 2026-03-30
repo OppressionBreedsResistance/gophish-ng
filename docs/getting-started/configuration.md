@@ -21,6 +21,10 @@ Gophish-NG uses a `config.json` file in the root directory.
   "logging": {
     "filename": "",
     "level": ""
+  },
+  "turnstile": {
+    "site_key": "",
+    "secret_key": ""
   }
 }
 ```
@@ -34,3 +38,5 @@ Gophish-NG uses a `config.json` file in the root directory.
 | `db_name` | Database driver: `sqlite3` or `mysql` |
 | `db_path` | Path to the SQLite database file |
 | `contact_address` | Email address embedded in outgoing emails as `X-Contact` header |
+| `turnstile.site_key` | Cloudflare Turnstile site key — leave empty to disable bot protection |
+| `turnstile.secret_key` | Cloudflare Turnstile secret key — leave empty to disable bot protection |
