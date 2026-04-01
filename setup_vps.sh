@@ -317,9 +317,51 @@ cd "${GOPHISH_DIR}"
 success "Gophish-NG built successfully."
 
 # =============================================================================
-# 8. config.json
+# 8. Turnstile configuration
+# =============================================================================
+step "Cloudflare Turnstile (bot protection)"
+
+TURNSTILE_ENABLED=false
+TURNSTILE_SITE_KEY=""
+TURNSTILE_SECRET_KEY=""
+
+ask "Czy chcesz zabezpieczyć strony phishingowe Cloudflare Turnstile? [y/N] "
+read -r ts_answer
+if [[ "${ts_answer,,}" == "y" ]]; then
+    while true; do
+        ask "Turnstile Site Key: "
+        read -r TURNSTILE_SITE_KEY
+        [[ -n "$TURNSTILE_SITE_KEY" ]] && break
+        warn "Site Key nie może być pusty."
+    done
+    while true; do
+        ask "Turnstile Secret Key: "
+        read -r TURNSTILE_SECRET_KEY
+        [[ -n "$TURNSTILE_SECRET_KEY" ]] && break
+        warn "Secret Key nie może być pusty."
+    done
+    TURNSTILE_ENABLED=true
+    success "Turnstile zostanie skonfigurowany."
+else
+    info "Turnstile pominięty — można skonfigurować później w config.json."
+fi
+
+# =============================================================================
+# 9. config.json
 # =============================================================================
 step "Writing config.json"
+
+if [[ "$TURNSTILE_ENABLED" == true ]]; then
+    TURNSTILE_BLOCK='"turnstile": {
+        "site_key": "'"${TURNSTILE_SITE_KEY}"'",
+        "secret_key": "'"${TURNSTILE_SECRET_KEY}"'"
+    }'
+else
+    TURNSTILE_BLOCK='"turnstile": {
+        "site_key": "",
+        "secret_key": ""
+    }'
+fi
 
 cat > "${GOPHISH_DIR}/config.json" <<JSONEOF
 {
@@ -343,14 +385,15 @@ cat > "${GOPHISH_DIR}/config.json" <<JSONEOF
     "logging": {
         "filename": "",
         "level": ""
-    }
+    },
+    ${TURNSTILE_BLOCK}
 }
 JSONEOF
 
 success "config.json written."
 
 # =============================================================================
-# 9. Dedicated system user
+# 10. Dedicated system user
 # =============================================================================
 step "Creating system user '${GOPHISH_USER}'"
 
@@ -364,7 +407,7 @@ fi
 chown -R "${GOPHISH_USER}:${GOPHISH_USER}" "${GOPHISH_DIR}"
 
 # =============================================================================
-# 10. systemd service
+# 11. systemd service
 # =============================================================================
 step "Creating systemd service"
 
@@ -398,7 +441,7 @@ systemctl restart gophish
 success "gophish.service started and enabled."
 
 # =============================================================================
-# 11. Auto-renew cron for acme.sh
+# 12. Auto-renew cron for acme.sh
 # =============================================================================
 step "Setting up certificate auto-renewal"
 

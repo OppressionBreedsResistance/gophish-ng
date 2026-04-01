@@ -55,3 +55,4 @@ nav:
     - IOC Removal: features/ioc-removal.md
     - Password-Protected ZIP: features/password-zip.md
     - QR Code Placeholder: features/qr-code.md
+    - Turnstile Protection: features/turnstile.md
