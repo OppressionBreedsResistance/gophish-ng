@@ -165,6 +165,9 @@ step "Issuing TLS wildcard certificates (DNS-01 manual)"
 # acme.sh refuses to run when SUDO_USER is set in the environment
 unset SUDO_USER
 
+# acme.sh 3.0+ defaults to ZeroSSL — switch to Let's Encrypt
+"${ACME}" --set-default-ca --server letsencrypt --home "${ACME_HOME}"
+
 mkdir -p "${ACME_CERTS_DIR}"
 
 declare -A CERT_PATHS=()
