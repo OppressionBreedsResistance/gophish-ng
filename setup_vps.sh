@@ -112,7 +112,7 @@ step "Installing system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
-    git curl wget socat nginx \
+    git curl wget socat nginx golang-go \
     build-essential ca-certificates \
     software-properties-common
 
@@ -123,51 +123,24 @@ success "Packages installed."
 # =============================================================================
 step "Checking Go installation"
 
-GO_MIN_VERSION="1.21"
-
-install_go() {
-    info "Fetching latest stable Go..."
-    GO_LATEST=$(curl -s https://go.dev/VERSION?m=text | head -1)
-    GO_TAR="${GO_LATEST}.linux-amd64.tar.gz"
-    GO_URL="https://golang.org/dl/${GO_TAR}"
-    info "Downloading ${GO_TAR}..."
-    wget -q --show-progress "${GO_URL}" -O /tmp/go.tar.gz
-    rm -rf /usr/local/go
-    tar -C /usr/local -xzf /tmp/go.tar.gz
-    rm /tmp/go.tar.gz
-    export PATH="$PATH:/usr/local/go/bin"
-    success "Go ${GO_LATEST} installed."
-}
-
 if command -v go &>/dev/null; then
-    CURRENT_GO=$(go version | awk '{print $3}' | sed 's/go//')
-    info "Found Go ${CURRENT_GO}"
-    # Simple major.minor check
-    CURRENT_MAJOR=$(echo "$CURRENT_GO" | cut -d. -f1)
-    CURRENT_MINOR=$(echo "$CURRENT_GO" | cut -d. -f2)
-    MIN_MINOR=$(echo "$GO_MIN_VERSION" | cut -d. -f2)
-    if (( CURRENT_MAJOR < 1 || CURRENT_MINOR < MIN_MINOR )); then
-        warn "Go version too old, upgrading..."
-        install_go
-    else
-        success "Go version OK."
-    fi
+    success "Go $(go version | awk '{print $3}') installed."
 else
-    install_go
+    error "golang-go installation failed — 'go' not found in PATH."
 fi
-
-export PATH="$PATH:/usr/local/go/bin"
 
 # =============================================================================
 # 3. acme.sh
 # =============================================================================
-step "Checking acme.sh"
+step "Installing acme.sh"
 
 if [[ -f "${ACME_HOME}/acme.sh" ]]; then
     success "acme.sh already installed."
 else
     info "Installing acme.sh..."
-    curl -fsSL https://get.acme.sh | sh -s -- --home "${ACME_HOME}" --email "${ACME_EMAIL}" --no-cron
+    curl https://get.acme.sh | sh
+    # shellcheck source=/dev/null
+    source ~/.bashrc
     success "acme.sh installed."
 fi
 
