@@ -216,6 +216,7 @@ for domain in "${DOMAINS[@]}"; do
         --home "${ACME_HOME}" \
         -d "${domain}" \
         --ecc \
+        --yes-I-know-dns-manual-mode-enough-go-ahead-please \
         || error "Certificate verification failed for ${domain}. Check TXT records and try again."
 
     "${ACME}" --install-cert \
