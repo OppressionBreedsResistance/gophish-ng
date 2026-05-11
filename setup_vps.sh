@@ -166,43 +166,35 @@ mkdir -p "${ACME_CERTS_DIR}"
 
 declare -A CERT_PATHS=()
 declare -A KEY_PATHS=()
-declare -A TXT_RECORDS=()
 
-# Step 1: generate DNS challenges for all domains
+# Step 1: generate DNS challenges — print TXT records directly to terminal
+echo ""
+echo -e "${BOLD}${YELLOW}================================================================${NC}"
+echo -e "${BOLD}${YELLOW}  STEP 1 — Generating DNS challenges (TXT records below)${NC}"
+echo -e "${BOLD}${YELLOW}================================================================${NC}"
+
 for domain in "${DOMAINS[@]}"; do
+    echo ""
     info "Generating DNS-01 challenge for ${domain} and *.${domain}..."
 
     CERT_OUT="${ACME_CERTS_DIR}/${domain}"
     mkdir -p "${CERT_OUT}"
 
-    ACME_OUT=$("${ACME}" --issue \
+    "${ACME}" --issue \
         --home "${ACME_HOME}" \
         -d "${domain}" \
         -d "*.${domain}" \
         --dns \
         --yes-I-know-dns-manual-mode-enough-go-ahead-please \
         --keylength ec-256 \
-        2>&1) || true
-
-    TXT_RECORDS[$domain]="$ACME_OUT"
+        || true
 done
 
-# Step 2: display all required TXT records and wait
+# Step 2: wait for user to add TXT records
 echo ""
 echo -e "${BOLD}${YELLOW}================================================================${NC}"
-echo -e "${BOLD}${YELLOW}  ACTION REQUIRED — Add DNS TXT records for all domains${NC}"
+echo -e "${BOLD}${YELLOW}  STEP 2 — Add the TXT records shown above to your DNS${NC}"
 echo -e "${BOLD}${YELLOW}================================================================${NC}"
-
-for domain in "${DOMAINS[@]}"; do
-    echo ""
-    echo -e "${BOLD}  Domain: ${domain}${NC}"
-    echo "${TXT_RECORDS[$domain]}" \
-        | grep -E "Domain:|TXT value:" \
-        | sed 's/^.*\] /  /' \
-        | sed 's/Domain:/  Record name:/' \
-        | sed 's/TXT value:/  TXT value:  /'
-done
-
 echo ""
 warn "Wait at least 60 seconds after adding records for DNS propagation."
 ask "Press [Enter] once all TXT records are set and propagated..."
