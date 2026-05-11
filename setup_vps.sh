@@ -162,6 +162,9 @@ success "nginx started."
 # =============================================================================
 step "Issuing TLS wildcard certificates (DNS-01 manual)"
 
+# acme.sh refuses to run when SUDO_USER is set in the environment
+unset SUDO_USER
+
 mkdir -p "${ACME_CERTS_DIR}"
 
 declare -A CERT_PATHS=()
