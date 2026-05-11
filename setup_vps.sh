@@ -174,59 +174,78 @@ fi
 ACME="${ACME_HOME}/acme.sh"
 
 # =============================================================================
-# 4. Prepare webroot for HTTP-01 challenge
+# 4. Start nginx (DNS-01 — no webroot needed)
 # =============================================================================
-step "Preparing ACME webroot"
+step "Starting nginx"
 
 mkdir -p "${WEBROOT}/.well-known/acme-challenge"
-chown -R www-data:www-data "${WEBROOT}" 2>/dev/null || true
-
-# Temporary nginx config: serve /.well-known on port 80 for all domains
-cat > /etc/nginx/sites-available/_acme-challenge <<'NGINXEOF'
-server {
-    listen 80 default_server;
-    server_name _;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/acme-challenge;
-    }
-
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-NGINXEOF
-
-# Disable default site, enable challenge site
 rm -f /etc/nginx/sites-enabled/default
-ln -sf /etc/nginx/sites-available/_acme-challenge /etc/nginx/sites-enabled/_acme-challenge
-
-nginx -t && systemctl reload nginx
-success "nginx ready for ACME challenges."
+systemctl enable nginx
+systemctl restart nginx
+success "nginx started."
 
 # =============================================================================
-# 5. Issue TLS certificates
+# 5. Issue TLS certificates — DNS-01 manual mode (wildcard)
 # =============================================================================
-step "Issuing TLS certificates"
+step "Issuing TLS wildcard certificates (DNS-01 manual)"
 
 mkdir -p "${ACME_CERTS_DIR}"
 
 declare -A CERT_PATHS=()
 declare -A KEY_PATHS=()
+declare -A TXT_RECORDS=()
 
+# Step 1: generate DNS challenges for all domains
 for domain in "${DOMAINS[@]}"; do
-    info "Issuing certificate for ${domain}..."
+    info "Generating DNS-01 challenge for ${domain} and *.${domain}..."
 
     CERT_OUT="${ACME_CERTS_DIR}/${domain}"
     mkdir -p "${CERT_OUT}"
 
-    "${ACME}" --issue \
+    ACME_OUT=$("${ACME}" --issue \
         --home "${ACME_HOME}" \
         -d "${domain}" \
-        --webroot "${WEBROOT}" \
+        -d "*.${domain}" \
+        --dns \
+        --yes-I-know-dns-manual-mode-enough-go-ahead-please \
         --keylength ec-256 \
-        --force \
-        || warn "Certificate issue for ${domain} returned non-zero — may already exist, continuing."
+        2>&1) || true
+
+    TXT_RECORDS[$domain]="$ACME_OUT"
+done
+
+# Step 2: display all required TXT records and wait
+echo ""
+echo -e "${BOLD}${YELLOW}================================================================${NC}"
+echo -e "${BOLD}${YELLOW}  ACTION REQUIRED — Add DNS TXT records for all domains${NC}"
+echo -e "${BOLD}${YELLOW}================================================================${NC}"
+
+for domain in "${DOMAINS[@]}"; do
+    echo ""
+    echo -e "${BOLD}  Domain: ${domain}${NC}"
+    echo "${TXT_RECORDS[$domain]}" \
+        | grep -E "Domain:|TXT value:" \
+        | sed 's/^.*\] /  /' \
+        | sed 's/Domain:/  Record name:/' \
+        | sed 's/TXT value:/  TXT value:  /'
+done
+
+echo ""
+warn "Wait at least 60 seconds after adding records for DNS propagation."
+ask "Press [Enter] once all TXT records are set and propagated..."
+read -r
+
+# Step 3: complete verification and install certs
+for domain in "${DOMAINS[@]}"; do
+    info "Verifying DNS challenge and issuing certificate for ${domain}..."
+
+    CERT_OUT="${ACME_CERTS_DIR}/${domain}"
+
+    "${ACME}" --renew \
+        --home "${ACME_HOME}" \
+        -d "${domain}" \
+        --ecc \
+        || error "Certificate verification failed for ${domain}. Check TXT records and try again."
 
     "${ACME}" --install-cert \
         --home "${ACME_HOME}" \
@@ -238,17 +257,13 @@ for domain in "${DOMAINS[@]}"; do
 
     CERT_PATHS[$domain]="${CERT_OUT}/fullchain.cer"
     KEY_PATHS[$domain]="${CERT_OUT}/key.pem"
-    success "Certificate installed for ${domain}."
+    success "Wildcard certificate installed for ${domain} (covers *.${domain})."
 done
 
 # =============================================================================
 # 6. nginx — final site configs
 # =============================================================================
 step "Writing nginx reverse-proxy configs"
-
-# Remove temporary ACME-only config
-rm -f /etc/nginx/sites-enabled/_acme-challenge
-rm -f /etc/nginx/sites-available/_acme-challenge
 
 for domain in "${DOMAINS[@]}"; do
     SITE_CONF="/etc/nginx/sites-available/${domain}"
@@ -441,13 +456,22 @@ systemctl restart gophish
 success "gophish.service started and enabled."
 
 # =============================================================================
-# 12. Auto-renew cron for acme.sh
+# 12. Certificate renewal notice (DNS-01 manual — no auto-renew)
 # =============================================================================
-step "Setting up certificate auto-renewal"
+step "Certificate renewal"
 
-CRON_JOB="0 3 * * * ${ACME} --cron --home ${ACME_HOME} --reloadcmd 'systemctl reload nginx' >> /var/log/acme-renew.log 2>&1"
-( crontab -l 2>/dev/null | grep -v "acme.sh" ; echo "${CRON_JOB}" ) | crontab -
-success "Daily renewal cron set (runs at 03:00)."
+warn "Wildcard certificates via DNS-01 manual mode cannot be renewed automatically."
+warn "Let's Encrypt certs expire after 90 days."
+warn "To renew, repeat the two-step DNS challenge for each domain:"
+echo ""
+for domain in "${DOMAINS[@]}"; do
+    echo -e "  # Step 1 — generate new TXT records:"
+    echo -e "  ${ACME} --issue --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please --home ${ACME_HOME} -d ${domain} -d *.${domain} --ecc --force"
+    echo -e "  # Step 2 — after updating DNS TXT records:"
+    echo -e "  ${ACME} --renew --home ${ACME_HOME} -d ${domain} --ecc"
+    echo ""
+done
+info "Tip: set a calendar reminder ~75 days from today to renew certificates."
 
 # =============================================================================
 # Done — print summary
@@ -477,7 +501,7 @@ echo -e "  Configs   : /etc/nginx/sites-available/<domain>"
 echo ""
 echo -e "${BOLD}Certificates${NC}"
 echo -e "  Location  : ${ACME_CERTS_DIR}/<domain>/"
-echo -e "  Renewal   : automatic via cron (daily at 03:00)"
+echo -e "  Renewal   : manual (DNS-01) — see renewal instructions above"
 echo ""
 echo -e "${YELLOW}NOTE:${NC} Default Gophish credentials are printed in the service log:"
 echo -e "  journalctl -u gophish | grep 'Please login'"
