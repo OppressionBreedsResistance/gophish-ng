@@ -115,6 +115,12 @@ func (w *DefaultWorker) Start() {
 
 // LaunchCampaign starts a campaign
 func (w *DefaultWorker) LaunchCampaign(c models.Campaign) {
+	if c.CampaignType == models.CampaignTypeSMS {
+		log.WithFields(logrus.Fields{
+			"campaign_id": c.Id,
+		}).Info("SMS campaign launched — skipping mailer, export CSV to send manually")
+		return
+	}
 	ms, err := models.GetMailLogsByCampaign(c.Id)
 	if err != nil {
 		log.Error(err)

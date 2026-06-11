@@ -243,6 +243,15 @@ function exportAsCSV(scope) {
     $("#exportButton").html(exportHTML)
 }
 
+function exportSMSCSV() {
+    var exportHTML = $("#exportButton").html()
+    $("#exportButton").html('<i class="fa fa-spinner fa-spin"></i>')
+    window.location.href = "/api/campaigns/" + campaign.id + "/sms-export?api_key=" + user.api_key
+    setTimeout(function () {
+        $("#exportButton").html(exportHTML)
+    }, 1500)
+}
+
 function replay(event_idx) {
     request = campaign.timeline[event_idx]
     details = JSON.parse(request.details)

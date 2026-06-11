@@ -1,9 +1,13 @@
 package api
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	ctx "github.com/gophish/gophish/context"
 	log "github.com/gophish/gophish/logger"
@@ -134,4 +138,45 @@ func (as *Server) CampaignComplete(w http.ResponseWriter, r *http.Request) {
 		}
 		JSONResponse(w, models.Response{Success: true, Message: "Campaign completed successfully!"}, http.StatusOK)
 	}
+}
+
+// CampaignSMSExport returns a CSV file with per-recipient tracking URLs
+// for use with external SMS sending tools.
+func (as *Server) CampaignSMSExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		JSONResponse(w, models.Response{Success: false, Message: "Method not allowed"}, http.StatusMethodNotAllowed)
+		return
+	}
+	vars := mux.Vars(r)
+	id, _ := strconv.ParseInt(vars["id"], 0, 64)
+	c, err := models.GetCampaign(id, ctx.Get(r, "user_id").(int64))
+	if err != nil {
+		log.Error(err)
+		JSONResponse(w, models.Response{Success: false, Message: "Campaign not found"}, http.StatusNotFound)
+		return
+	}
+
+	var buf bytes.Buffer
+	cw := csv.NewWriter(&buf)
+	cw.Write([]string{"first_name", "last_name", "email", "phone", "tracking_url"})
+	for _, result := range c.Results {
+		trackingURL := fmt.Sprintf("%s?%s=%s", c.URL, models.RecipientParameter, result.RId)
+		cw.Write([]string{
+			result.FirstName,
+			result.LastName,
+			result.Email,
+			result.Phone,
+			trackingURL,
+		})
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		JSONResponse(w, models.Response{Success: false, Message: "Error generating CSV"}, http.StatusInternalServerError)
+		return
+	}
+
+	filename := fmt.Sprintf("smishing_campaign_%d_%s.csv", c.Id, time.Now().Format("20060102"))
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	w.Write(buf.Bytes())
 }

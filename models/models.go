@@ -45,6 +45,8 @@ const (
 	CampaignCreated    string = "Created"
 	CampaignEmailsSent string = "Emails Sent"
 	CampaignComplete   string = "Completed"
+	CampaignTypeEmail  string = "email"
+	CampaignTypeSMS    string = "sms"
 	EventSent          string = "Email Sent"
 	EventSendingError  string = "Error Sending Email"
 	EventOpened        string = "Email Opened"
