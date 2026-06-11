@@ -60,6 +60,7 @@ function launch() {
                     send_by_date: send_by_date || null,
                     groups: groups,
                     host_attachment: $("#host_attachment").is(":checked"),
+                    campaign_type: $("#campaign_type").val() || "email",
                 }
                 // Submit the campaign
                 api.campaigns.post(campaign)

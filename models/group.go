@@ -57,6 +57,7 @@ type BaseRecipient struct {
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Position  string `json:"position"`
+	Phone     string `json:"phone"`
 }
 
 // FormatAddress returns the email address to use in the "To" header of the email

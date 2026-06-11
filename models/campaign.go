@@ -35,6 +35,7 @@ type Campaign struct {
 	SMTP           SMTP      `json:"smtp"`
 	URL            string    `json:"url"`
 	HostAttachment bool      `json:"host_attachment"`
+	CampaignType   string    `json:"campaign_type"`
 }
 
 // CampaignResults is a struct representing the results from a campaign
