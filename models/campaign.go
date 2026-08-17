@@ -132,6 +132,11 @@ var ErrSMTPNotFound = errors.New("Sending profile not found")
 // launch date
 var ErrInvalidSendByDate = errors.New("The launch date must be before the \"send emails by\" date")
 
+// ErrCampaignURLNotSpecified indicates that no landing page URL was provided.
+// This is required for SMS campaigns, since the per-recipient tracking link is
+// built from the campaign URL.
+var ErrCampaignURLNotSpecified = errors.New("No URL specified")
+
 // RecipientParameter is the URL parameter that points to the result ID for a recipient.
 const RecipientParameter = "keyname"
 
@@ -142,10 +147,21 @@ func (c *Campaign) Validate() error {
 		return ErrCampaignNameNotSpecified
 	case len(c.Groups) == 0:
 		return ErrGroupNotSpecified
-	case c.Template.Name == "":
-		return ErrTemplateNotSpecified
 	case c.Page.Name == "":
 		return ErrPageNotSpecified
+	}
+	// SMS (smishing) campaigns are delivered manually via the CSV export, so
+	// they don't need an email template or a sending profile - only a landing
+	// page (for click/form tracking) and a URL to build the per-recipient link.
+	if c.CampaignType == CampaignTypeSMS {
+		if c.URL == "" {
+			return ErrCampaignURLNotSpecified
+		}
+		return nil
+	}
+	switch {
+	case c.Template.Name == "":
+		return ErrTemplateNotSpecified
 	case c.SMTP.Name == "":
 		return ErrSMTPNotSpecified
 	case !c.SendByDate.IsZero() && !c.LaunchDate.IsZero() && c.SendByDate.Before(c.LaunchDate):
@@ -460,6 +476,11 @@ func GetQueuedCampaigns(t time.Time) ([]Campaign, error) {
 
 // PostCampaign inserts a campaign and all associated records into the database.
 func PostCampaign(c *Campaign, uid int64) error {
+	// Default to an email campaign when the type isn't specified, so gorm
+	// doesn't persist an empty string (which would bypass the DB column default).
+	if c.CampaignType == "" {
+		c.CampaignType = CampaignTypeEmail
+	}
 	err := c.Validate()
 	if err != nil {
 		return err
@@ -497,19 +518,23 @@ func PostCampaign(c *Campaign, uid int64) error {
 		}
 		totalRecipients += len(c.Groups[i].Targets)
 	}
-	// Check to make sure the template exists
-	t, err := GetTemplateByName(c.Template.Name, uid)
-	if err == gorm.ErrRecordNotFound {
-		log.WithFields(logrus.Fields{
-			"template": c.Template.Name,
-		}).Error("Template does not exist")
-		return ErrTemplateNotFound
-	} else if err != nil {
-		log.Error(err)
-		return err
+	// Email campaigns need a template and a sending profile. SMS campaigns are
+	// exported to CSV and sent manually, so we skip those lookups entirely.
+	if c.CampaignType != CampaignTypeSMS {
+		// Check to make sure the template exists
+		t, err := GetTemplateByName(c.Template.Name, uid)
+		if err == gorm.ErrRecordNotFound {
+			log.WithFields(logrus.Fields{
+				"template": c.Template.Name,
+			}).Error("Template does not exist")
+			return ErrTemplateNotFound
+		} else if err != nil {
+			log.Error(err)
+			return err
+		}
+		c.Template = t
+		c.TemplateId = t.Id
 	}
-	c.Template = t
-	c.TemplateId = t.Id
 	// Check to make sure the page exists
 	p, err := GetPageByName(c.Page.Name, uid)
 	if err == gorm.ErrRecordNotFound {
@@ -523,19 +548,21 @@ func PostCampaign(c *Campaign, uid int64) error {
 	}
 	c.Page = p
 	c.PageId = p.Id
-	// Check to make sure the sending profile exists
-	s, err := GetSMTPByName(c.SMTP.Name, uid)
-	if err == gorm.ErrRecordNotFound {
-		log.WithFields(logrus.Fields{
-			"smtp": c.SMTP.Name,
-		}).Error("Sending profile does not exist")
-		return ErrSMTPNotFound
-	} else if err != nil {
-		log.Error(err)
-		return err
+	if c.CampaignType != CampaignTypeSMS {
+		// Check to make sure the sending profile exists
+		s, err := GetSMTPByName(c.SMTP.Name, uid)
+		if err == gorm.ErrRecordNotFound {
+			log.WithFields(logrus.Fields{
+				"smtp": c.SMTP.Name,
+			}).Error("Sending profile does not exist")
+			return ErrSMTPNotFound
+		} else if err != nil {
+			log.Error(err)
+			return err
+		}
+		c.SMTP = s
+		c.SMTPId = s.Id
 	}
-	c.SMTP = s
-	c.SMTPId = s.Id
 	// Insert into the DB
 	err = db.Save(c).Error
 	if err != nil {
@@ -566,6 +593,7 @@ func PostCampaign(c *Campaign, uid int64) error {
 					Position:  t.Position,
 					FirstName: t.FirstName,
 					LastName:  t.LastName,
+					Phone:     t.Phone,
 				},
 				Status:       StatusScheduled,
 				CampaignId:   c.Id,
@@ -581,7 +609,11 @@ func PostCampaign(c *Campaign, uid int64) error {
 				return err
 			}
 			processing := false
-			if r.SendDate.Before(c.CreatedDate) || r.SendDate.Equal(c.CreatedDate) {
+			// SMS (smishing) campaigns are delivered manually via the CSV
+			// export, so we never flip the result into the "sending" state and
+			// never queue a MailLog - the per-recipient link is simply ready.
+			isSMS := c.CampaignType == CampaignTypeSMS
+			if !isSMS && (r.SendDate.Before(c.CreatedDate) || r.SendDate.Equal(c.CreatedDate)) {
 				r.Status = StatusSending
 				processing = true
 			}
@@ -594,6 +626,10 @@ func PostCampaign(c *Campaign, uid int64) error {
 				return err
 			}
 			c.Results = append(c.Results, *r)
+			if isSMS {
+				recipientIndex++
+				continue
+			}
 			log.WithFields(logrus.Fields{
 				"email":     r.Email,
 				"send_date": sendDate,
