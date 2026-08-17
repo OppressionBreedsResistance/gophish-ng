@@ -37,6 +37,36 @@ ADMIN_LISTEN="127.0.0.1:3333"
 PHISH_LISTEN="127.0.0.1:5555"
 
 # =============================================================================
+# Mode / arguments
+# =============================================================================
+# Default: full interactive install.
+# `--add-domain <domain>` (repeatable) adds one or more new phishing domains to
+# an EXISTING install: it issues the TLS cert and writes the nginx vhost only —
+# no package install, no rebuild, no touching the running gophish service.
+MODE="install"
+ADD_DOMAINS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --add-domain)
+            MODE="add-domain"
+            shift
+            [[ -n "${1:-}" && "$1" != --* ]] || error "--add-domain requires a domain, e.g. --add-domain phish2.example.com"
+            ADD_DOMAINS+=("$1")
+            ;;
+        -h|--help)
+            echo "Usage:"
+            echo "  sudo bash $0                                    # full install (interactive)"
+            echo "  sudo bash $0 --add-domain d1 [--add-domain d2]  # add domain(s) to an existing install"
+            exit 0
+            ;;
+        *)
+            error "Unknown argument: $1 (see --help)"
+            ;;
+    esac
+    shift
+done
+
+# =============================================================================
 # Root check
 # =============================================================================
 if [[ $EUID -ne 0 ]]; then
@@ -62,51 +92,71 @@ echo -e "${NC}${CYAN}  VPS Auto-Setup  —  nginx + acme.sh + Gophish-NG${NC}\n"
 # =============================================================================
 step "Domain configuration"
 
-while true; do
-    ask "How many phishing domains will you configure? "
-    read -r DOMAIN_COUNT
-    if [[ "$DOMAIN_COUNT" =~ ^[1-9][0-9]*$ ]]; then
-        break
-    fi
-    warn "Please enter a positive integer."
-done
+normalize_domain() {
+    local d="${1,,}"
+    d="${d#https://}"; d="${d#http://}"; d="${d%/}"
+    printf '%s' "$d"
+}
 
 DOMAINS=()
-for (( i=1; i<=DOMAIN_COUNT; i++ )); do
+if [[ "$MODE" == "add-domain" ]]; then
+    for raw in "${ADD_DOMAINS[@]}"; do
+        domain="$(normalize_domain "$raw")"
+        [[ "$domain" =~ ^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)+$ ]] \
+            || error "Invalid domain name: ${raw}"
+        DOMAINS+=("$domain")
+    done
+    info "Add-domain mode — will issue cert + write nginx vhost for:"
+    for d in "${DOMAINS[@]}"; do
+        echo "    • $d"
+    done
+else
     while true; do
-        ask "Domain $i (e.g. phish.example.com): "
-        read -r domain
-        domain="${domain,,}"   # lowercase
-        domain="${domain#https://}"
-        domain="${domain#http://}"
-        domain="${domain%/}"
-        if [[ "$domain" =~ ^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)+$ ]]; then
-            DOMAINS+=("$domain")
+        ask "How many phishing domains will you configure? "
+        read -r DOMAIN_COUNT
+        if [[ "$DOMAIN_COUNT" =~ ^[1-9][0-9]*$ ]]; then
             break
         fi
-        warn "Invalid domain name, try again."
+        warn "Please enter a positive integer."
     done
-done
 
-ask "Email address for acme.sh / Let's Encrypt notifications: "
-read -r ACME_EMAIL
-if [[ -z "$ACME_EMAIL" ]]; then
-    error "Email is required for certificate issuance."
+    for (( i=1; i<=DOMAIN_COUNT; i++ )); do
+        while true; do
+            ask "Domain $i (e.g. phish.example.com): "
+            read -r domain
+            domain="$(normalize_domain "$domain")"
+            if [[ "$domain" =~ ^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)+$ ]]; then
+                DOMAINS+=("$domain")
+                break
+            fi
+            warn "Invalid domain name, try again."
+        done
+    done
+
+    ask "Email address for acme.sh / Let's Encrypt notifications: "
+    read -r ACME_EMAIL
+    if [[ -z "$ACME_EMAIL" ]]; then
+        error "Email is required for certificate issuance."
+    fi
+
+    echo ""
+    info "Will configure domains:"
+    for d in "${DOMAINS[@]}"; do
+        echo "    • $d"
+    done
+    echo ""
+    ask "Continue? [y/N] "
+    read -r confirm
+    [[ "${confirm,,}" == "y" ]] || error "Aborted by user."
 fi
-
-echo ""
-info "Will configure domains:"
-for d in "${DOMAINS[@]}"; do
-    echo "    • $d"
-done
-echo ""
-ask "Continue? [y/N] "
-read -r confirm
-[[ "${confirm,,}" == "y" ]] || error "Aborted by user."
 
 # =============================================================================
 # 1. System packages
 # =============================================================================
+# Base install (system packages + Go) is only needed for a full install,
+# never when just adding a domain to an already-provisioned server.
+if [[ "$MODE" != "add-domain" ]]; then
+
 step "Installing system packages"
 
 export DEBIAN_FRONTEND=noninteractive
@@ -130,6 +180,8 @@ else
     error "golang-go installation failed — 'go' not found in PATH."
 fi
 
+fi  # end base-install-only block (packages + Go)
+
 # =============================================================================
 # 3. acme.sh
 # =============================================================================
@@ -150,6 +202,9 @@ ACME="${ACME_HOME}/acme.sh"
 # =============================================================================
 # 4. Start nginx (DNS-01 — no webroot needed)
 # =============================================================================
+# nginx is already running on an existing server, so in add-domain mode we skip
+# the (briefly disruptive) restart — the vhost is reloaded gracefully later.
+if [[ "$MODE" != "add-domain" ]]; then
 step "Starting nginx"
 
 mkdir -p "${WEBROOT}/.well-known/acme-challenge"
@@ -157,6 +212,7 @@ rm -f /etc/nginx/sites-enabled/default
 systemctl enable nginx
 systemctl restart nginx
 success "nginx started."
+fi
 
 # =============================================================================
 # 5. Issue TLS certificates — DNS-01 manual mode (wildcard)
@@ -304,6 +360,28 @@ done
 
 nginx -t && systemctl reload nginx
 success "nginx reloaded with final config."
+
+# In add-domain mode we're done: cert issued + vhost live, no rebuild/restart.
+if [[ "$MODE" == "add-domain" ]]; then
+    echo ""
+    echo -e "${BOLD}${GREEN}================================================================${NC}"
+    echo -e "${BOLD}${GREEN}  Domain(s) added successfully!${NC}"
+    echo -e "${BOLD}${GREEN}================================================================${NC}"
+    echo ""
+    echo -e "${BOLD}Newly configured domains (phish server):${NC}"
+    for d in "${DOMAINS[@]}"; do
+        echo -e "  • https://${d}"
+    done
+    echo ""
+    info "The running gophish service was left untouched (no rebuild, no restart)."
+    warn "Ensure each new domain's DNS A/AAAA record points to this VPS."
+    warn "Wildcard certs (DNS-01 manual) do not auto-renew — renew within 90 days:"
+    for d in "${DOMAINS[@]}"; do
+        echo -e "  ${ACME} --issue --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please --home ${ACME_HOME} -d ${d} -d *.${d} --ecc --force"
+        echo -e "  ${ACME} --renew --home ${ACME_HOME} -d ${d} --ecc"
+    done
+    exit 0
+fi
 
 # =============================================================================
 # 7. Build Gophish-NG
