@@ -142,6 +142,18 @@ Leave both fields empty to disable (default). See the [Turnstile docs](docs/feat
 
 ---
 
+### SMS Campaigns (Smishing)
+
+Run SMS phishing campaigns alongside email. Gophish-NG does not send the texts — it generates a unique tracking link per recipient and exports them to CSV so you can send from your own SMS gateway, while clicks and submitted form data are tracked exactly as in an email campaign.
+
+- Set **Campaign Type** to **SMS (Smishing)** when creating a campaign. Only a **Landing Page** and a **URL** are required — the email template and sending profile are ignored, and no email is ever sent.
+- Add **phone numbers** to group targets (with country code, e.g. `+48500000000`); a `Phone` column is supported in CSV import. An email address is still required per recipient (used for de-duplication).
+- On the campaign **Results** page, use **Export → Smishing CSV** to download `first_name, last_name, email, phone, tracking_url` for every recipient.
+
+See the [Smishing docs](docs/features/smishing.md) for the full workflow.
+
+---
+
 ### IOC Removal
 
 The following Gophish-specific indicators of compromise have been removed or replaced:
