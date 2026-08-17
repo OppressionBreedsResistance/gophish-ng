@@ -113,7 +113,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
     git curl wget socat nginx golang-go \
-    build-essential ca-certificates \
+    build-essential ca-certificates openssl \
     software-properties-common
 
 success "Packages installed."
@@ -124,7 +124,8 @@ success "Packages installed."
 step "Checking Go installation"
 
 if command -v go &>/dev/null; then
-    success "Go $(go version | awk '{print $3}') installed."
+    GO_BIN="$(command -v go)"
+    success "Go $(go version | awk '{print $3}') installed at ${GO_BIN}."
 else
     error "golang-go installation failed — 'go' not found in PATH."
 fi
@@ -173,64 +174,84 @@ mkdir -p "${ACME_CERTS_DIR}"
 declare -A CERT_PATHS=()
 declare -A KEY_PATHS=()
 
-# Step 1: generate DNS challenges — print TXT records directly to terminal
-echo ""
-echo -e "${BOLD}${YELLOW}================================================================${NC}"
-echo -e "${BOLD}${YELLOW}  STEP 1 — Generating DNS challenges (TXT records below)${NC}"
-echo -e "${BOLD}${YELLOW}================================================================${NC}"
-
+# Detect domains that already have a valid installed certificate, so that
+# re-running the script does not contact Let's Encrypt again (avoids rate
+# limits) or prompt for the DNS TXT records a second time.
+NEED_CERTS=()
 for domain in "${DOMAINS[@]}"; do
+    CERT_OUT="${ACME_CERTS_DIR}/${domain}"
+    if [[ -s "${CERT_OUT}/fullchain.cer" && -s "${CERT_OUT}/key.pem" ]] \
+        && openssl x509 -checkend 604800 -noout -in "${CERT_OUT}/fullchain.cer" &>/dev/null; then
+        CERT_PATHS[$domain]="${CERT_OUT}/fullchain.cer"
+        KEY_PATHS[$domain]="${CERT_OUT}/key.pem"
+        success "Existing valid certificate found for ${domain} — skipping issuance."
+    else
+        NEED_CERTS+=("${domain}")
+    fi
+done
+
+if [[ ${#NEED_CERTS[@]} -eq 0 ]]; then
+    success "All domains already have valid certificates — skipping DNS-01 challenge."
+else
+    # Step 1: generate DNS challenges — print TXT records directly to terminal
     echo ""
-    info "Generating DNS-01 challenge for ${domain} and *.${domain}..."
+    echo -e "${BOLD}${YELLOW}================================================================${NC}"
+    echo -e "${BOLD}${YELLOW}  STEP 1 — Generating DNS challenges (TXT records below)${NC}"
+    echo -e "${BOLD}${YELLOW}================================================================${NC}"
 
-    CERT_OUT="${ACME_CERTS_DIR}/${domain}"
-    mkdir -p "${CERT_OUT}"
+    for domain in "${NEED_CERTS[@]}"; do
+        echo ""
+        info "Generating DNS-01 challenge for ${domain} and *.${domain}..."
 
-    "${ACME}" --issue \
-        --home "${ACME_HOME}" \
-        -d "${domain}" \
-        -d "*.${domain}" \
-        --dns \
-        --yes-I-know-dns-manual-mode-enough-go-ahead-please \
-        --keylength ec-256 \
-        || true
-done
+        CERT_OUT="${ACME_CERTS_DIR}/${domain}"
+        mkdir -p "${CERT_OUT}"
 
-# Step 2: wait for user to add TXT records
-echo ""
-echo -e "${BOLD}${YELLOW}================================================================${NC}"
-echo -e "${BOLD}${YELLOW}  STEP 2 — Add the TXT records shown above to your DNS${NC}"
-echo -e "${BOLD}${YELLOW}================================================================${NC}"
-echo ""
-warn "Wait at least 60 seconds after adding records for DNS propagation."
-ask "Press [Enter] once all TXT records are set and propagated..."
-read -r
+        "${ACME}" --issue \
+            --home "${ACME_HOME}" \
+            -d "${domain}" \
+            -d "*.${domain}" \
+            --dns \
+            --yes-I-know-dns-manual-mode-enough-go-ahead-please \
+            --keylength ec-256 \
+            || true
+    done
 
-# Step 3: complete verification and install certs
-for domain in "${DOMAINS[@]}"; do
-    info "Verifying DNS challenge and issuing certificate for ${domain}..."
+    # Step 2: wait for user to add TXT records
+    echo ""
+    echo -e "${BOLD}${YELLOW}================================================================${NC}"
+    echo -e "${BOLD}${YELLOW}  STEP 2 — Add the TXT records shown above to your DNS${NC}"
+    echo -e "${BOLD}${YELLOW}================================================================${NC}"
+    echo ""
+    warn "Wait at least 60 seconds after adding records for DNS propagation."
+    ask "Press [Enter] once all TXT records are set and propagated..."
+    read -r
 
-    CERT_OUT="${ACME_CERTS_DIR}/${domain}"
+    # Step 3: complete verification and install certs
+    for domain in "${NEED_CERTS[@]}"; do
+        info "Verifying DNS challenge and issuing certificate for ${domain}..."
 
-    "${ACME}" --renew \
-        --home "${ACME_HOME}" \
-        -d "${domain}" \
-        --ecc \
-        --yes-I-know-dns-manual-mode-enough-go-ahead-please \
-        || error "Certificate verification failed for ${domain}. Check TXT records and try again."
+        CERT_OUT="${ACME_CERTS_DIR}/${domain}"
 
-    "${ACME}" --install-cert \
-        --home "${ACME_HOME}" \
-        -d "${domain}" \
-        --ecc \
-        --fullchain-file "${CERT_OUT}/fullchain.cer" \
-        --key-file       "${CERT_OUT}/key.pem" \
-        --reloadcmd      "systemctl reload nginx"
+        "${ACME}" --renew \
+            --home "${ACME_HOME}" \
+            -d "${domain}" \
+            --ecc \
+            --yes-I-know-dns-manual-mode-enough-go-ahead-please \
+            || error "Certificate verification failed for ${domain}. Check TXT records and try again."
 
-    CERT_PATHS[$domain]="${CERT_OUT}/fullchain.cer"
-    KEY_PATHS[$domain]="${CERT_OUT}/key.pem"
-    success "Wildcard certificate installed for ${domain} (covers *.${domain})."
-done
+        "${ACME}" --install-cert \
+            --home "${ACME_HOME}" \
+            -d "${domain}" \
+            --ecc \
+            --fullchain-file "${CERT_OUT}/fullchain.cer" \
+            --key-file       "${CERT_OUT}/key.pem" \
+            --reloadcmd      "systemctl reload nginx"
+
+        CERT_PATHS[$domain]="${CERT_OUT}/fullchain.cer"
+        KEY_PATHS[$domain]="${CERT_OUT}/key.pem"
+        success "Wildcard certificate installed for ${domain} (covers *.${domain})."
+    done
+fi
 
 # =============================================================================
 # 6. nginx — final site configs
@@ -300,7 +321,7 @@ fi
 
 info "Building (this may take a few minutes)..."
 cd "${GOPHISH_DIR}"
-/usr/local/go/bin/go build -o gophish .
+"${GO_BIN}" build -o gophish .
 success "Gophish-NG built successfully."
 
 # =============================================================================
