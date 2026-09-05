@@ -4,6 +4,18 @@
 
 Gophish-NG is a fork of the open-source [Gophish](https://github.com/gophish/gophish) phishing toolkit, extended with additional capabilities for red team engagements.
 
+## 📖 Documentation
+
+Full documentation is published at **<https://oppressionbreedsresistance.github.io/gophish-ng/>**
+
+| | |
+|---|---|
+| **Getting started** | [Installation](https://oppressionbreedsresistance.github.io/gophish-ng/getting-started/installation/) · [VPS Quick Setup](https://oppressionbreedsresistance.github.io/gophish-ng/getting-started/vps-setup/) · [Configuration](https://oppressionbreedsresistance.github.io/gophish-ng/getting-started/configuration/) |
+| **User guide** | [Campaigns](https://oppressionbreedsresistance.github.io/gophish-ng/user-guide/campaigns/) · [Email Templates](https://oppressionbreedsresistance.github.io/gophish-ng/user-guide/email-templates/) · [Attachments](https://oppressionbreedsresistance.github.io/gophish-ng/user-guide/attachments/) · [Campaign Results](https://oppressionbreedsresistance.github.io/gophish-ng/user-guide/campaign-results/) |
+| **Features** | [Attachment Tracking](https://oppressionbreedsresistance.github.io/gophish-ng/features/attachment-tracking/) · [Hosted Attachments](https://oppressionbreedsresistance.github.io/gophish-ng/features/hosted-attachments/) · [IOC Removal](https://oppressionbreedsresistance.github.io/gophish-ng/features/ioc-removal/) · [Password-Protected ZIP](https://oppressionbreedsresistance.github.io/gophish-ng/features/password-zip/) · [QR Code Placeholder](https://oppressionbreedsresistance.github.io/gophish-ng/features/qr-code/) · [SMS Campaigns (Smishing)](https://oppressionbreedsresistance.github.io/gophish-ng/features/smishing/) · [Turnstile Protection](https://oppressionbreedsresistance.github.io/gophish-ng/features/turnstile/) |
+
+The sections below are a summary; the documentation site covers each feature in more depth.
+
 ## Quick Setup (VPS)
 
 For a full production deployment on a fresh Ubuntu/Debian VPS — including nginx reverse proxy, Let's Encrypt TLS certificates, and a systemd service — use the included setup script:
@@ -64,6 +76,8 @@ This fork includes the following changes on top of the upstream Gophish codebase
 
 ### Attachment Template Support
 
+> Full page: [Attachment Template Support](https://oppressionbreedsresistance.github.io/gophish-ng/user-guide/attachments/)
+
 - **`.ps1` and `.bat` files** — PowerShell and batch script attachments support placeholder substitution (`{{.URL}}`, `{{.FirstName}}`, etc.), the same way `.txt` and `.html` files do.
 - **`.pdf` files** — PDF attachments also support placeholder substitution. Note: this works only if the placeholder text is stored as **plain text** in the PDF content stream. PDFs using compressed streams (zlib/deflate) will not be processed correctly and may become corrupted. For best results, export PDFs from tools that do not compress text streams (e.g. Word → Export to PDF with default settings).
 - **`.zip` files containing text-based payloads** — When a `.zip` archive is used as an attachment, Gophish-NG unpacks it in memory, applies template substitution to every text-based file inside, and repacks it before sending. The same extension list is used for standalone attachments and for files inside an archive, so a payload behaves identically whether or not it is zipped:
@@ -91,6 +105,8 @@ This fork includes the following changes on top of the upstream Gophish codebase
 
 ### QR Code Placeholder
 
+> Full page: [QR Code Placeholder](https://oppressionbreedsresistance.github.io/gophish-ng/features/qr-code/)
+
 Use `{{.QR}}` in any email template to embed a per-recipient QR code that links to the phishing URL.
 
 - Generated server-side and embedded as an inline image (CID) — no external requests needed.
@@ -106,6 +122,8 @@ Example:
 ---
 
 ### Attachment Click Tracking
+
+> Full page: [Attachment Click Tracking](https://oppressionbreedsresistance.github.io/gophish-ng/features/attachment-tracking/)
 
 A new event type **"Clicked Attachment"** tracks when a recipient executes the delivered payload.
 
@@ -127,6 +145,8 @@ Invoke-WebRequest -Uri "{{.Attachment}}" -UseBasicParsing | Out-Null
 
 ### Hosted Attachments
 
+> Full page: [Hosted Attachments](https://oppressionbreedsresistance.github.io/gophish-ng/features/hosted-attachments/)
+
 When **Host Attachment** is enabled on a campaign, the attachment is served directly from the phishing server rather than embedded in the email.
 
 - At send time, a personalised copy of the first email template attachment (with all placeholders substituted) is written to `static/endpoint/attachments/<campaignId>/<RId>/`
@@ -137,6 +157,8 @@ When **Host Attachment** is enabled on a campaign, the attachment is served dire
 ---
 
 ### Cloudflare Turnstile Bot Protection
+
+> Full page: [Cloudflare Turnstile Bot Protection](https://oppressionbreedsresistance.github.io/gophish-ng/features/turnstile/)
 
 Optional bot protection layer that silently verifies every visitor is a real browser before they can access any landing page or hosted attachment.
 
@@ -155,6 +177,8 @@ Leave both fields empty to disable (default). See the [Turnstile docs](docs/feat
 
 ### SMS Campaigns (Smishing)
 
+> Full page: [SMS Campaigns (Smishing)](https://oppressionbreedsresistance.github.io/gophish-ng/features/smishing/)
+
 Run SMS phishing campaigns alongside email. Gophish-NG does not send the texts — it generates a unique tracking link per recipient and exports them to CSV so you can send from your own SMS gateway, while clicks and submitted form data are tracked exactly as in an email campaign.
 
 - Set **Campaign Type** to **SMS (Smishing)** when creating a campaign. Only a **Landing Page** and a **URL** are required — the email template and sending profile are ignored, and no email is ever sent.
@@ -166,6 +190,8 @@ See the [Smishing docs](docs/features/smishing.md) for the full workflow.
 ---
 
 ### IOC Removal
+
+> Full page: [IOC Removal](https://oppressionbreedsresistance.github.io/gophish-ng/features/ioc-removal/)
 
 The following Gophish-specific indicators of compromise have been removed or replaced:
 
@@ -182,6 +208,8 @@ The following Gophish-specific indicators of compromise have been removed or rep
 ---
 
 ### Campaign Results Enhancements
+
+> Full page: [Campaign Results Enhancements](https://oppressionbreedsresistance.github.io/gophish-ng/user-guide/campaign-results/)
 
 - **Email Reported** — displayed as a status label in the results table when a recipient reports the email, without affecting the sequential event progression.
 - **Clicked Attachment** — displayed as a 5th status level (purple) in both the results table and the donut chart.
