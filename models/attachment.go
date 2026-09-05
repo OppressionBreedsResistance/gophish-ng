@@ -27,6 +27,31 @@ type Attachment struct {
 	vanillaFile bool   // Vanilla file has no template variables
 }
 
+// templatableExtensions lists the file extensions whose contents are treated as
+// text and run through the template engine. The same set is used for standalone
+// attachments and for files found inside a .zip archive, so a payload behaves
+// identically whether or not it has been zipped.
+var templatableExtensions = map[string]bool{
+	".txt":  true,
+	".html": true,
+	".htm":  true,
+	".ics":  true,
+	".ps1":  true,
+	".bat":  true,
+	".pdf":  true,
+	".js":   true,
+	".vbs":  true,
+	".hta":  true,
+	".xml":  true,
+	".rels": true,
+}
+
+// isTemplatable reports whether the phishing template should be applied to a file
+// with the given extension.
+func isTemplatable(fileExtension string) bool {
+	return templatableExtensions[strings.ToLower(fileExtension)]
+}
+
 // Validate ensures that the provided attachment uses the supported template variables correctly.
 func (a Attachment) Validate() error {
 	vc := ValidationContext{
@@ -176,7 +201,7 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 
 			subFileExtension := filepath.Ext(zipFile.Name)
 			var tFile string
-			if subFileExtension == ".ps1" || subFileExtension == ".bat" || subFileExtension == ".pdf" || subFileExtension == ".xml" || subFileExtension == ".rels" {
+			if isTemplatable(subFileExtension) {
 				tFile, err = ExecuteTemplate(string(contents), ptx)
 				if err != nil {
 					return nil, err
@@ -225,7 +250,10 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 		yzipWriter.Close()
 		return bytes.NewReader(newZipArchive.Bytes()), nil
 
-	case ".txt", ".html", ".ics", ".ps1", ".bat", ".pdf":
+	default:
+		if !isTemplatable(fileExtension) {
+			return decodedAttachment, nil // Anything else is sent through untouched
+		}
 		b, err := ioutil.ReadAll(decodedAttachment)
 		if err != nil {
 			return nil, err
@@ -238,8 +266,6 @@ func (a *Attachment) ApplyTemplate(ptx PhishingTemplateContext) (io.Reader, erro
 			a.vanillaFile = true
 		}
 		return strings.NewReader(processedAttachment), nil
-	default:
-		return decodedAttachment, nil // Default is to simply return the file
 	}
 
 }

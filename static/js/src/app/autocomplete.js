@@ -47,6 +47,11 @@ var TEMPLATE_TAGS = [{
         id: 10,
         name: 'QR',
         description: 'An inline QR code image linking to the phishing URL, unique per recipient.'
+    },
+    {
+        id: 11,
+        name: 'Attachment',
+        description: 'The URL a payload beacons to in order to record a "Clicked Attachment" event.'
     }
 ];
 

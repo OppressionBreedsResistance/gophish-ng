@@ -66,7 +66,13 @@ This fork includes the following changes on top of the upstream Gophish codebase
 
 - **`.ps1` and `.bat` files** — PowerShell and batch script attachments support placeholder substitution (`{{.URL}}`, `{{.FirstName}}`, etc.), the same way `.txt` and `.html` files do.
 - **`.pdf` files** — PDF attachments also support placeholder substitution. Note: this works only if the placeholder text is stored as **plain text** in the PDF content stream. PDFs using compressed streams (zlib/deflate) will not be processed correctly and may become corrupted. For best results, export PDFs from tools that do not compress text streams (e.g. Word → Export to PDF with default settings).
-- **`.zip` files containing `.ps1`, `.bat`, or `.pdf`** — When a `.zip` archive is used as an attachment, Gophish-NG unpacks it in memory, applies template substitution to any `.ps1`, `.bat`, `.pdf` (and `.xml`/`.rels`) files inside, and repacks it before sending.
+- **`.zip` files containing text-based payloads** — When a `.zip` archive is used as an attachment, Gophish-NG unpacks it in memory, applies template substitution to every text-based file inside, and repacks it before sending. The same extension list is used for standalone attachments and for files inside an archive, so a payload behaves identically whether or not it is zipped:
+
+  | Templated (case-insensitive) |
+  | --- |
+  | `.txt` `.html` `.htm` `.ics` `.ps1` `.bat` `.pdf` `.js` `.vbs` `.hta` `.xml` `.rels` |
+
+  Anything else inside the archive (images, binaries, nested Office documents) is repacked byte-for-byte. Note that substitution is unconditional for the extensions above — a `.js` payload that legitimately contains `{{` will be rejected by the template parser, so escape it or rename the file to an untemplated extension.
 - **Password-protected `.zip` attachments** — ZIP archives encrypted with ZipCrypto are fully supported. Gophish-NG decrypts the archive, applies placeholder substitution, and re-encrypts before sending. The password is stored per-attachment in the database and can be set in the template UI.
 
 #### How to use password-protected ZIP attachments
@@ -103,14 +109,19 @@ Example:
 
 A new event type **"Clicked Attachment"** tracks when a recipient executes the delivered payload.
 
-- The payload script should beacon back to `{{.URL}}/attachment?keyname={{.RId}}` on execution.
+- The payload should beacon back to **`{{.Attachment}}`** on execution. The placeholder expands to a per-recipient URL in the form `<base URL>/attachment?keyname=<RId>`, e.g. `http://example.com/attachment?keyname=1234567`.
 - Gophish-NG records a **Clicked Attachment** event, visible in the campaign results table and donut chart (purple).
 - If the email had not been marked as opened yet, the open event is automatically inferred.
+- `{{.Attachment}}` is available in every templated context — email bodies, landing pages and attachments — and appears in the CKEditor autocomplete dropdown.
 
 Example beacon in PowerShell:
 ```powershell
-Invoke-WebRequest -Uri "{{.URL}}/attachment?keyname={{.RId}}" -UseBasicParsing | Out-Null
+Invoke-WebRequest -Uri "{{.Attachment}}" -UseBasicParsing | Out-Null
 ```
+
+> **Correction:** earlier revisions of this README documented the beacon URL as `{{.URL}}/attachment?keyname={{.RId}}`. That does not work. `{{.URL}}` is the full phishing URL and **already carries the path and the `keyname` query string**, so the expression expands to something like `http://example.com?keyname=1234567/attachment?keyname=1234567` — the `/attachment` segment ends up inside the query string, the request is routed to the landing page handler instead of the attachment handler, and the recipient ID no longer resolves. The result is a 404 and no **Clicked Attachment** event.
+>
+> Use `{{.Attachment}}`. If you need to build the URL by hand, the correct form is `{{.BaseURL}}/attachment?keyname={{.RId}}` — `{{.BaseURL}}` has the path and query stripped.
 
 ---
 

@@ -24,6 +24,7 @@ type PhishingTemplateContext struct {
 	TrackingURL      string
 	RId              string
 	BaseURL          string
+	Attachment       string // Per-recipient URL a payload beacons to, recording a "Clicked Attachment" event
 	QR        string // HTML <img> tag referencing the QR code via CID
 	QRName    string // filename used for CID embedding
 	QRBase64  string // base64-encoded PNG of the QR code
@@ -64,11 +65,19 @@ func NewPhishingTemplateContext(ctx TemplateContext, r BaseRecipient, rid string
 	trackingURL.Path = path.Join(trackingURL.Path, "/track")
 	trackingURL.RawQuery = q.Encode()
 
+	// The attachment tracking handler is registered at the root of the phishing
+	// server, so this is built from the base URL rather than from the campaign
+	// URL's path - it resolves to {{.BaseURL}}/attachment?keyname={{.RId}}
+	attachmentURL, _ := url.Parse(baseURL.String())
+	attachmentURL.Path = "/attachment"
+	attachmentURL.RawQuery = q.Encode()
+
 	ptx := PhishingTemplateContext{
 		BaseRecipient: r,
 		BaseURL:       baseURL.String(),
 		URL:           phishURL.String(),
 		TrackingURL:   trackingURL.String(),
+		Attachment:    attachmentURL.String(),
 		Tracker:       "<img alt='' style='display: none' src='" + trackingURL.String() + "'/>",
 		From:          fn,
 		RId:           rid,
