@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/textproto"
+	"strings"
 	"testing"
 	"time"
 
@@ -402,6 +403,43 @@ func (s *ModelsSuite) TestEmbedAttachment(ch *check.C) {
 	// the text file was added as an attachment.
 	ch.Assert(got.Attachments, check.HasLen, 1)
 	ch.Assert(got.Attachments[0].Filename, check.Equals, "test.txt")
+}
+
+// rawMessageFromFirstMailLog renders the first maillog of the campaign into a raw
+// MIME message. The email package drops inline parts, so the QR code tests need
+// to inspect the raw message instead.
+func (s *ModelsSuite) rawMessageFromFirstMailLog(campaign Campaign, ch *check.C) string {
+	result := campaign.Results[0]
+	m := &MailLog{}
+	err := db.Where("r_id=? AND campaign_id=?", result.RId, campaign.Id).
+		Find(m).Error
+	ch.Assert(err, check.Equals, nil)
+
+	msg := gomail.NewMessage()
+	ch.Assert(m.Generate(msg), check.Equals, nil)
+
+	msgBuff := &bytes.Buffer{}
+	_, err = msg.WriteTo(msgBuff)
+	ch.Assert(err, check.Equals, nil)
+	return msgBuff.String()
+}
+
+func (s *ModelsSuite) TestMailLogGenerateNoQRWhenUnused(ch *check.C) {
+	campaign := s.createCampaign(ch)
+	raw := s.rawMessageFromFirstMailLog(campaign, ch)
+	qrName := fmt.Sprintf("qr_%s.png", campaign.Results[0].RId)
+	ch.Assert(strings.Contains(raw, qrName), check.Equals, false)
+}
+
+func (s *ModelsSuite) TestMailLogGenerateQRWhenUsed(ch *check.C) {
+	campaign := s.createCampaignDependencies(ch)
+	campaign.Template.HTML = "{{.RId}} - HTML {{.QR}}"
+	PutTemplate(&campaign.Template)
+	ch.Assert(PostCampaign(&campaign, campaign.UserId), check.Equals, nil)
+	raw := s.rawMessageFromFirstMailLog(campaign, ch)
+	qrName := fmt.Sprintf("qr_%s.png", campaign.Results[0].RId)
+	ch.Assert(strings.Contains(raw, "cid:"+qrName), check.Equals, true)
+	ch.Assert(strings.Contains(raw, "Content-ID: <"+qrName+">"), check.Equals, true)
 }
 
 func BenchmarkMailLogGenerate100(b *testing.B) {

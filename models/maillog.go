@@ -266,8 +266,11 @@ func (m *MailLog) Generate(msg *gomail.Message) error {
 		}
 	}
 
-	// Embed QR code inline if the template uses {{.QR}}
-	if ptx.QRName != "" {
+	// Embed QR code inline only if the template actually uses {{.QR}}.
+	// The QR image is generated for every recipient, so without this check
+	// every email carries an unreferenced inline PNG, which many mail clients
+	// display as a stray attachment.
+	if ptx.QRName != "" && (strings.Contains(c.Template.HTML, ".QR") || strings.Contains(c.Template.Text, ".QR")) {
 		qrAttachment := Attachment{
 			Name:        ptx.QRName,
 			Content:     ptx.QRBase64,
