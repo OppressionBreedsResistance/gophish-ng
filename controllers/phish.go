@@ -344,6 +344,22 @@ func (ps *PhishingServer) turnstileMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// noCacheMiddleware marks every phishing-server response as non-cacheable.
+//
+// Responses here are per-recipient (keyed by RId) and often depend on state
+// such as the Turnstile cookie, so a shared cache must never store them. This
+// matters behind a CDN like Cloudflare, which caches by file extension (.zip,
+// .pdf, images...): if a mail scanner opens a hosted attachment URL without the
+// Turnstile cookie, the challenge page gets cached under the attachment URL
+// and the real recipient loops on the challenge forever. It also keeps
+// tracking pixels from being served from cache, which would hide opens.
+func noCacheMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "private, no-store, max-age=0")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // CreatePhishingRouter creates the router that handles phishing connections.
 func (ps *PhishingServer) registerRoutes() {
 	router := mux.NewRouter()
@@ -369,6 +385,9 @@ func (ps *PhishingServer) registerRoutes() {
 
 	// Cloudflare Turnstile — wraps the entire router (no-op when keys are empty)
 	phishHandler = ps.turnstileMiddleware(phishHandler)
+
+	// Forbid caching of every phishing response (see noCacheMiddleware)
+	phishHandler = noCacheMiddleware(phishHandler)
 
 	// Setup logging
 	phishHandler = handlers.CombinedLoggingHandler(log.Writer(), phishHandler)
